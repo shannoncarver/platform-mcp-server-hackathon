@@ -27,6 +27,12 @@ User (aws sso login)
 
 Cross-account hops are OAuth `client_credentials` JWT over public HTTPS — SCP-safe. In-account hops are synchronous Lambda Invoke with the called Lambda owning its own third-party credentials. See [`docs/dispatch-patterns.md`](docs/dispatch-patterns.md) for the full decision tree.
 
+## Documentation
+
+- [`docs/architecture.md`](docs/architecture.md) — full system architecture: components, request lifecycle, security model, data model, deployment, and diagrams.
+- [`docs/dispatch-patterns.md`](docs/dispatch-patterns.md) — the three dispatch kinds, wire shapes, IAM model, and the decision tree for adding a new tool.
+- [`docs/aws-sso-permission-set.md`](docs/aws-sso-permission-set.md) — the SSO permission set users must hold to call the platform.
+
 ## Repo layout
 
 ```
