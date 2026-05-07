@@ -1,0 +1,26 @@
+{
+  "name": "auth0-handler",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Auth0 management product handler — multiplexes logs/stats/sec/clients/user. Deploys in-account alongside the Platform MCP Lambda.",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.600.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.0",
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.24.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.0",
+    "typescript": "^5.4.0"
+  }
+}

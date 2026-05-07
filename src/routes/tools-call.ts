@@ -15,6 +15,10 @@ import {
   RPC_INTERNAL_ERROR,
 } from "../errors.js";
 import { dispatch, DispatchError, JwtMintError } from "../jwt-dispatcher.js";
+import {
+  dispatch as dispatchLambdaDirect,
+  LambdaDirectDispatchError,
+} from "../lambda-direct-dispatcher.js";
 import { listProducts, searchTools, whoami } from "../platform-handlers.js";
 import { emitAudit } from "../audit.js";
 
@@ -120,6 +124,50 @@ export async function handleToolsCall(
     request_id: args.requestId,
     arguments: args.params.arguments ?? {},
   };
+
+  // In-account synchronous Lambda Invoke. The called Lambda owns its own
+  // credentials; the platform never touches the called Lambda's secret. The
+  // registry-supplied `action` is added at the top level of the payload so
+  // a single Lambda can multiplex multiple registered tools.
+  if (item.dispatchTarget.kind === "lambda-direct") {
+    let lambdaResult;
+    try {
+      lambdaResult = await dispatchLambdaDirect({
+        lambdaArn: item.dispatchTarget.lambdaArn,
+        action: item.dispatchTarget.action,
+        body,
+      });
+    } catch (err) {
+      if (err instanceof LambdaDirectDispatchError) {
+        await audit(args, toolName, "deny", `UPSTREAM_${err.status}`, err.status);
+        return rpcError(
+          args.rpcId,
+          RPC_INTERNAL_ERROR,
+          `UPSTREAM_${err.status}`,
+          args.requestId,
+        );
+      }
+      await audit(args, toolName, "deny", "DISPATCH_ERROR", undefined, {
+        class: "DISPATCH",
+        message: (err as Error).message,
+      });
+      return rpcError(
+        args.rpcId,
+        RPC_INTERNAL_ERROR,
+        "DISPATCH_ERROR",
+        args.requestId,
+      );
+    }
+    await audit(args, toolName, "allow", undefined, lambdaResult.status);
+    return rpcOk(
+      args.rpcId,
+      {
+        content: [{ type: "text", text: JSON.stringify(lambdaResult.body) }],
+        structuredContent: lambdaResult.body,
+      },
+      args.requestId,
+    );
+  }
 
   if (item.dispatchTarget.kind !== "https-jwt") {
     await audit(args, toolName, "deny", "DISPATCH_TARGET_UNKNOWN");

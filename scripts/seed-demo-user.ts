@@ -14,8 +14,21 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
 
 const TABLE = process.env.USER_PERMISSIONS_TABLE_NAME ?? "platform_mcp_user_permissions";
-const EMAIL = process.env.DEMO_USER_EMAIL ?? "mshannoncarver@gmail.com";
-const PERMISSIONS = (process.env.DEMO_PERMISSIONS ?? "erp:user:read")
+const EMAIL = process.env.DEMO_USER_EMAIL ?? "scarver@linq.com";
+// Default permission set covers: ERP user-access checks + all five Auth0
+// management actions (logs/stats/sec/clients/user). Override via
+// DEMO_PERMISSIONS for narrower test seeds.
+const PERMISSIONS = (
+  process.env.DEMO_PERMISSIONS ??
+  [
+    "erp:user:read",
+    "platform:auth0:logs:read",
+    "platform:auth0:stats:read",
+    "platform:auth0:sec:read",
+    "platform:auth0:clients:read",
+    "platform:auth0:user:read",
+  ].join(",")
+)
   .split(",")
   .map((s) => s.trim())
   .filter((s) => s.length > 0);

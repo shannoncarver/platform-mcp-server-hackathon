@@ -4,7 +4,7 @@ LINQ Platform MCP Server — V1, internal-only.
 
 ## What this is
 
-A Model Context Protocol (MCP) server that runs as an AWS Lambda behind an HTTP API Gateway. It provides Claude Code (or any AWS-SDK-aware MCP client) with a single governed entry point to a catalog of read-only tools that fan out across LINQ product accounts.
+A Model Context Protocol (MCP) server that runs as an AWS Lambda behind an HTTP API Gateway. It provides Claude Code (or any AWS-SDK-aware MCP client) with a single governed entry point to a catalog of read-only tools that fan out across LINQ product accounts and platform-team-owned handlers.
 
 The trust chain end-to-end:
 
@@ -17,11 +17,15 @@ User (aws sso login)
                     ├─ project the tool catalog by user
                     ├─ enforce coarse RBAC
                     ├─ emit per-request audit
-                    └─ ──SigV4──> Per-product API Gateway (REST API v1, AWS_IAM + Resource Policy)
-                                    ──> Product Lambda → product DynamoDB
+                    └─ dispatch (one of three):
+                          (a) inline       — in-process platform meta-tools
+                          (b) https-jwt    ──> Per-product API Gateway (cross-account)
+                                              JWT authorizer ──> Product Lambda
+                          (c) lambda-direct──> In-account platform-team Lambda
+                                              (e.g., auth0-handler-platform-mcp)
 ```
 
-One auth mechanism (SigV4 + IAM) at every hop. No JWTs, no token-exchange brokers, no separately-minted credentials.
+Cross-account hops are OAuth `client_credentials` JWT over public HTTPS — SCP-safe. In-account hops are synchronous Lambda Invoke with the called Lambda owning its own third-party credentials. See [`docs/dispatch-patterns.md`](docs/dispatch-patterns.md) for the full decision tree.
 
 ## Repo layout
 
@@ -40,14 +44,20 @@ src/
     tools-list.ts              tools/list with cursor pagination
     tools-call.ts              tools/call dispatch
 test/                          Jest suite
+  lambda-direct-dispatcher.ts  In-account dispatcher — synchronous Lambda Invoke
 infra/
   cfn/platform.yaml            Platform infra: DDB, Lambda, API Gateway, IAM
   erp-handler/                 ERP product handler (deploys to linq-erp-dev)
+  auth0-handler/               Auth0 management handler (deploys in-account
+                               alongside the platform Lambda; lambda-direct)
 scripts/
   deploy-platform.sh           sam build + deploy
   deploy-erp-handler.sh        sam build + deploy to linq-erp-dev
+  deploy-auth0-handler.sh      sam build + deploy in-account
   seed-tool-registry.ts        Insert demo tools into the DDB registry
   seed-demo-user.ts            Insert demo user into the permissions table
+  seed-jwt-secret.ts           Copy Cognito client_credentials into Secrets Manager
+  seed-auth0-secret.ts         Populate the Auth0 management-creds secret
   demo-cli.ts                  End-to-end demo: SSO login → tools/call → result
   platform-mcp-shim.ts         stdio MCP shim — Claude Code launches this as
                                a local MCP server; the shim SigV4-signs each
@@ -71,14 +81,46 @@ npm test
 # Deploy ERP handler (requires linq-erp-dev profile)
 ./scripts/deploy-erp-handler.sh
 
-# Seed the demo data
-npx ts-node scripts/seed-tool-registry.ts
-npx ts-node scripts/seed-demo-user.ts
+# Deploy the in-account Auth0 handler (uses lambda-direct dispatch)
+./scripts/deploy-auth0-handler.sh
+
+# Populate the JWT credentials secret for the ERP handler
+AWS_PROFILE=linq-platform-dev npx tsx scripts/seed-jwt-secret.ts erp
+
+# Populate the Auth0 management-creds secret (M2M creds from the Auth0 dashboard)
+AUTH0_DOMAIN=linq-accounts-sandbox.us.auth0.com \
+AUTH0_CLIENT_ID=... \
+AUTH0_CLIENT_SECRET=... \
+AWS_PROFILE=linq-platform-dev \
+  npx tsx scripts/seed-auth0-secret.ts
+
+# Seed the tool registry (9 tools: 3 inline + 1 erp + 5 auth0)
+AUTH0_LAMBDA_ARN=$(aws cloudformation describe-stacks \
+  --stack-name auth0-handler-platform-mcp --region us-east-1 \
+  --profile linq-platform-dev \
+  --query "Stacks[0].Outputs[?OutputKey=='Auth0HandlerLambdaArn'].OutputValue" \
+  --output text) \
+ERP_API_URL=... ERP_JWT_SECRET_ARN=... \
+AWS_PROFILE=linq-platform-dev \
+  npx tsx scripts/seed-tool-registry.ts
+
+# Seed the demo user (all default permissions including Auth0)
+AWS_PROFILE=linq-platform-dev npx tsx scripts/seed-demo-user.ts
 
 # Run the demo CLI
 aws sso login --profile platform-mcp
-npx ts-node scripts/demo-cli.ts
+npx tsx scripts/demo-cli.ts
 ```
+
+## Adding a tool: dispatch patterns
+
+Three kinds, picked by where the work happens:
+
+- **`inline`** — in-process inside the Platform Lambda. Used for the platform's own meta-tools (`platform_whoami`, `platform_list_products`, `platform_search_tools`). No network hop, no extra IAM grant.
+- **`https-jwt`** — public HTTPS POST to a per-product API Gateway in a different LINQ account, with an OAuth `client_credentials` JWT in the `Authorization` header. SCP-safe (no cross-account IAM). Use this when the tool is owned by another product team and lives in their AWS account. Reference: `infra/erp-handler/`.
+- **`lambda-direct`** — synchronous AWS Lambda Invoke against a Lambda in the same AWS account as the platform. Use this for platform-team-owned handlers that call third-party APIs (Auth0, GitHub, Slack). The called Lambda owns its own credentials; the platform never sees them. Reference: `infra/auth0-handler/`.
+
+The full decision tree, wire shapes, IAM model, and a checklist for adding a new `lambda-direct` tool are in [`docs/dispatch-patterns.md`](docs/dispatch-patterns.md).
 
 ## Using the Platform MCP Server from Claude Code or Claude Desktop
 

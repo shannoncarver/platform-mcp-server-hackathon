@@ -24,7 +24,7 @@ export interface UserPermissions {
 }
 
 /**
- * Where to dispatch a tool. Discriminated union. Two kinds:
+ * Where to dispatch a tool. Discriminated union. Three kinds:
  *   - `inline` — handled in-process by `platform-handlers.ts` (whoami,
  *     list_products, search_tools).
  *   - `https-jwt` — public HTTPS POST to a per-product API Gateway with an
@@ -32,6 +32,15 @@ export interface UserPermissions {
  *     `tokenSecretArn` points at a Secrets Manager secret in the platform
  *     account holding `{ client_id, client_secret, token_endpoint, scope,
  *     audience }` for that handler. SCP-safe: no cross-account IAM action.
+ *   - `lambda-direct` — synchronous AWS Lambda `Invoke` against a Lambda in
+ *     the SAME AWS account as the platform. No JWT, no API Gateway. The
+ *     called Lambda owns its own credentials (e.g., its own Secrets Manager
+ *     secret); the platform dispatcher does not see them. `action` is a
+ *     registry-controlled string the platform passes as a top-level field
+ *     in the invocation payload so a single Lambda can multiplex multiple
+ *     tools (e.g., the Auth0 management Lambda dispatches on `action` to
+ *     one of `logs`, `stats`, `sec`, `clients`, `user`).
+ *     See `docs/dispatch-patterns.md` for the decision tree.
  */
 export type DispatchTarget =
   | { kind: "inline" }
@@ -40,6 +49,11 @@ export type DispatchTarget =
       url: string;
       tokenSecretArn: string;
       scope: string;
+    }
+  | {
+      kind: "lambda-direct";
+      lambdaArn: string;
+      action: string;
     };
 
 /** A registry item — one row in `platform_mcp_tool_registry`. */
