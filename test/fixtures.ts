@@ -8,6 +8,12 @@ import type {
 import { setAuditSink } from "../src/audit.js";
 import { setPermissionsStore } from "../src/user-permissions-store.js";
 import { setRegistryStore, _invalidateCacheForTesting } from "../src/registry.js";
+import {
+  setDispatcherForTesting,
+  type LambdaDirectDispatcher,
+  type LambdaDirectDispatchInput,
+  type LambdaDirectDispatchResult,
+} from "../src/lambda-direct-dispatcher.js";
 
 export function buildCaller(overrides: Partial<Caller> = {}): Caller {
   return {
@@ -147,4 +153,23 @@ export function installRegistryStore(items: RegistryItem[]): void {
       return items;
     },
   });
+}
+
+/**
+ * Inject a fake `lambda-direct` dispatcher and capture the last input it
+ * received. Returns the captured-input ref so tests can assert on the
+ * payload shape (e.g., that `action` was added at the top level).
+ */
+export function installLambdaDirectDispatcher(
+  impl: (input: LambdaDirectDispatchInput) => Promise<LambdaDirectDispatchResult>,
+): { lastInput?: LambdaDirectDispatchInput } {
+  const captured: { lastInput?: LambdaDirectDispatchInput } = {};
+  const fake: LambdaDirectDispatcher = {
+    async dispatch(input): Promise<LambdaDirectDispatchResult> {
+      captured.lastInput = input;
+      return impl(input);
+    },
+  };
+  setDispatcherForTesting(fake);
+  return captured;
 }

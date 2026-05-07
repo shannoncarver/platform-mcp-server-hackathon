@@ -30,6 +30,7 @@
     "@aws-sdk/client-cloudwatch-logs": "^3.600.0",
     "@aws-sdk/client-cognito-identity-provider": "^3.600.0",
     "@aws-sdk/client-dynamodb": "^3.600.0",
+    "@aws-sdk/client-lambda": "^3.600.0",
     "@aws-sdk/client-secrets-manager": "^3.600.0",
     "@aws-sdk/credential-provider-node": "^3.600.0",
     "@aws-sdk/credential-providers": "^3.600.0",
