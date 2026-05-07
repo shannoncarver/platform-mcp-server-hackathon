@@ -80,31 +80,66 @@ aws sso login --profile platform-mcp
 npx ts-node scripts/demo-cli.ts
 ```
 
-## Using the Platform MCP Server from Claude Code
+## Using the Platform MCP Server from Claude Code or Claude Desktop
 
-Claude Code's native MCP transports don't natively SigV4-sign API Gateway requests. The included **stdio shim** (`scripts/platform-mcp-shim.ts`) bridges Claude Code's MCP-over-stdio transport to the Platform MCP API Gateway:
+Claude Code and Claude Desktop both speak MCP, but neither natively SigV4-signs API Gateway requests. We ship a small **stdio shim** as a globally-installable npm command. It bridges the MCP-over-stdio transport to the Platform MCP API Gateway, signing each frame with the user's AWS SSO credentials.
 
-1. Make sure your AWS SSO session is active:
-   ```sh
-   aws sso login --profile linq-platform-dev
-   ```
-2. Add the shim to your Claude Code MCP config:
-   ```json
-   {
-     "mcpServers": {
-       "linq-platform": {
-         "command": "npx",
-         "args": ["tsx", "/abs/path/to/platform-mcp-server-hackathon/scripts/platform-mcp-shim.ts"],
-         "env": {
-           "AWS_PROFILE": "linq-platform-dev",
-           "PLATFORM_MCP_URL": "https://<api-id>.execute-api.us-east-1.amazonaws.com/prod/jsonrpc"
-         }
-       }
-     }
-   }
-   ```
-3. Restart Claude Code. Tools from the Platform MCP server will appear in Claude Code's tool list (filtered by your DDB permissions row).
-4. Ask a prompt that maps to a tool. For example: *"Verify johndoe@example.com is authorized for ERP for tenant1"* — Claude Code picks `erp.checkUserAccess`, calls it via the shim → API Gateway → Platform MCP Lambda → ERP Lambda → DDB.
+### One-time install (per teammate, per machine)
+
+Each teammate runs this once:
+
+```sh
+npm install -g github:shannoncarver/platform-mcp-server-hackathon
+```
+
+This clones the repo, builds the shim with esbuild (via the `prepare` script), and installs `platform-mcp-shim` as a globally-available command. Verify:
+
+```sh
+which platform-mcp-shim
+# /opt/homebrew/bin/platform-mcp-shim (or similar — should print a path)
+```
+
+To upgrade later: `npm install -g github:shannoncarver/platform-mcp-server-hackathon` again, or use `npm uninstall -g platform-mcp-server-hackathon` to remove.
+
+### Configure Claude Code
+
+```sh
+aws sso login --profile linq-platform-dev
+
+claude mcp add linq-platform-dev \
+  --scope user \
+  --env AWS_PROFILE=linq-platform-dev \
+  --env PLATFORM_MCP_URL=https://<api-id>.execute-api.us-east-1.amazonaws.com/prod/jsonrpc \
+  -- platform-mcp-shim
+```
+
+Restart Claude Code. Run `/mcp` to verify `linq-platform-dev` shows as connected.
+
+### Configure Claude Desktop (macOS)
+
+Open `~/Library/Application Support/Claude/claude_desktop_config.json` (or use **Settings → Developer → Edit Config**). Add the entry under `mcpServers`:
+
+```json
+{
+  "mcpServers": {
+    "linq-platform-dev": {
+      "command": "platform-mcp-shim",
+      "env": {
+        "AWS_PROFILE": "linq-platform-dev",
+        "PLATFORM_MCP_URL": "https://<api-id>.execute-api.us-east-1.amazonaws.com/prod/jsonrpc"
+      }
+    }
+  }
+}
+```
+
+The same config works on every teammate's Mac. Only `PLATFORM_MCP_URL` (constant for the team) and `AWS_PROFILE` (varies if a teammate uses a different SSO profile name) are user-tunable.
+
+Quit and relaunch Claude Desktop. Click the 🔌 icon in a conversation to see `linq-platform-dev` connected.
+
+### Use it
+
+In either app, ask a prompt that maps to a tool. For example: *"Verify johndoe@example.com is authorized for ERP for tenant1"* — Claude picks `erp.checkUserAccess`, the shim signs the request, and the chain runs through API Gateway → Platform MCP Lambda → ERP Lambda → DynamoDB.
 
 ## Status
 

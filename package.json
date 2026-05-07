@@ -7,8 +7,20 @@
     "node": ">=20"
   },
   "main": "dist/index.js",
+  "bin": {
+    "platform-mcp-shim": "dist/platform-mcp-shim.js"
+  },
+  "files": [
+    "dist/",
+    "scripts/platform-mcp-shim.ts",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
+    "build:shim": "esbuild scripts/platform-mcp-shim.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/platform-mcp-shim.js",
+    "prepare": "npm run build:shim && chmod +x dist/platform-mcp-shim.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "lint": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
