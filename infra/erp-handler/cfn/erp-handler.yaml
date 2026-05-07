@@ -48,21 +48,21 @@ Resources:
         DefaultAuthorizer: AWS_IAM
         ResourcePolicy:
           # Cross-account: ONLY the Platform MCP Lambda role may invoke this
-          # API. Anyone else (even with valid SigV4 from another principal)
-          # gets 403.
+          # API. We use a single Allow statement; resource policies are
+          # default-deny, so anyone not explicitly Allowed gets 403.
+          #
+          # Important: do NOT add an explicit Deny here. CloudFormation's
+          # deployment-validation step runs as the deploying principal (not
+          # the Platform MCP role), and an explicit Deny that catches every
+          # non-Platform-MCP principal will fail the deploy with
+          # "Caller provided credentials not allowed when resource policy
+          # is set".
           CustomStatements:
             - Effect: Allow
               Principal:
                 AWS: !Ref PlatformMcpRoleArn
               Action: execute-api:Invoke
               Resource: !Sub "execute-api:/${StageName}/POST/erp/checkUserAccess"
-            - Effect: Deny
-              Principal: "*"
-              Action: execute-api:Invoke
-              Resource: !Sub "execute-api:/${StageName}/POST/erp/checkUserAccess"
-              Condition:
-                ArnNotEquals:
-                  aws:PrincipalArn: !Ref PlatformMcpRoleArn
 
   ErpHandlerLambda:
     Type: AWS::Serverless::Function
