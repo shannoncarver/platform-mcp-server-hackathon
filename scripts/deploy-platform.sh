@@ -18,11 +18,10 @@ REGION="${AWS_REGION:-us-east-1}"
 STACK_NAME="${STACK_NAME:-platform-mcp-server}"
 TEMPLATE="infra/cfn/platform.yaml"
 
-echo "==> Building TypeScript ..."
+echo "==> Installing dependencies ..."
 npm install --no-audit --no-fund
-npm run build
 
-echo "==> sam build ..."
+echo "==> sam build (esbuild) ..."
 sam build --template "${TEMPLATE}"
 
 echo "==> sam deploy ..."

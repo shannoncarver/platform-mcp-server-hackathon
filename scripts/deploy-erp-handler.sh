@@ -29,13 +29,12 @@ if [[ -z "${PLATFORM_MCP_ROLE_ARN:-}" ]]; then
   exit 2
 fi
 
-echo "==> Building ERP handler ..."
+echo "==> Installing ERP handler dependencies ..."
 cd infra/erp-handler
 npm install --no-audit --no-fund
-npm run build
 cd ../..
 
-echo "==> sam build ..."
+echo "==> sam build (esbuild) ..."
 sam build --template "${TEMPLATE}"
 
 echo "==> sam deploy ..."

@@ -70,7 +70,7 @@ Resources:
       FunctionName: erp-check-user-access
       Description: erp.checkUserAccess product handler.
       CodeUri: ../
-      Handler: dist/index.handler
+      Handler: index.handler
       Policies:
         - AWSLambdaBasicExecutionRole
         - Version: "2012-10-17"
@@ -89,7 +89,13 @@ Resources:
             Method: POST
             Path: /erp/checkUserAccess
     Metadata:
-      BuildMethod: makefile
+      BuildMethod: esbuild
+      BuildProperties:
+        Format: cjs
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - src/index.ts
 
 Outputs:
   ErpApiUrl:

@@ -88,7 +88,7 @@ Resources:
       FunctionName: platform-mcp-server
       Description: LINQ Platform MCP Server entry handler.
       CodeUri: ../../
-      Handler: dist/index.handler
+      Handler: index.handler
       ReservedConcurrentExecutions: 10
       Policies:
         - AWSLambdaBasicExecutionRole
@@ -127,7 +127,13 @@ Resources:
             Method: POST
             Path: /jsonrpc
     Metadata:
-      BuildMethod: makefile
+      BuildMethod: esbuild
+      BuildProperties:
+        Format: cjs
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - src/index.ts
 
   # ---------- API Gateway HTTP API v2 (AWS_IAM auth on /jsonrpc) ----------
 
