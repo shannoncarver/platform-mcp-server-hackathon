@@ -1,0 +1,18 @@
+# Node
+node_modules/
+dist/
+coverage/
+*.log
+
+# Env
+.env
+.env.*
+
+# AWS / SAM
+.aws-sam/
+samconfig.toml.local
+
+# Editor
+.DS_Store
+.vscode/
+.idea/
