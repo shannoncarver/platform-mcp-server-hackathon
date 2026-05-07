@@ -56,3 +56,37 @@ aws cloudformation describe-stacks \
   --profile "${PROFILE}" \
   --query 'Stacks[0].Outputs' \
   --output table
+
+echo ""
+echo "==> Applying ERP API resource policy (post-deploy step) ..."
+ERP_API_ID=$(aws cloudformation describe-stacks \
+  --stack-name "${STACK_NAME}" \
+  --region "${REGION}" \
+  --profile "${PROFILE}" \
+  --query 'Stacks[0].Outputs[?OutputKey==`ErpApiId`].OutputValue' \
+  --output text)
+
+if [[ -z "${ERP_API_ID}" ]]; then
+  echo "ERROR: could not read ErpApiId from stack outputs." >&2
+  exit 3
+fi
+
+# JSON-escape the policy so it survives the patch-operations argument.
+POLICY_JSON=$(cat <<JSON
+{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"${PLATFORM_MCP_ROLE_ARN}"},"Action":"execute-api:Invoke","Resource":"execute-api:/*/POST/erp/checkUserAccess"}]}
+JSON
+)
+# Escape for `value=` in patch operations: replace double quotes with \" and slashes with \/.
+POLICY_ESCAPED=$(printf '%s' "${POLICY_JSON}" | sed -e 's/"/\\"/g' -e 's|/|\\/|g')
+
+aws apigateway update-rest-api \
+  --rest-api-id "${ERP_API_ID}" \
+  --region "${REGION}" \
+  --profile "${PROFILE}" \
+  --patch-operations "op=replace,path=/policy,value=${POLICY_ESCAPED}" \
+  > /dev/null
+
+echo "Resource policy applied. API ${ERP_API_ID} now locks to: ${PLATFORM_MCP_ROLE_ARN}"
+echo ""
+echo "Verify with:"
+echo "  aws apigateway get-rest-api --rest-api-id ${ERP_API_ID} --region ${REGION} --profile ${PROFILE} --query 'policy'"

@@ -46,23 +46,16 @@ Resources:
         Type: REGIONAL
       Auth:
         DefaultAuthorizer: AWS_IAM
-        ResourcePolicy:
-          # Cross-account: ONLY the Platform MCP Lambda role may invoke this
-          # API. We use a single Allow statement; resource policies are
-          # default-deny, so anyone not explicitly Allowed gets 403.
-          #
-          # Important: do NOT add an explicit Deny here. CloudFormation's
-          # deployment-validation step runs as the deploying principal (not
-          # the Platform MCP role), and an explicit Deny that catches every
-          # non-Platform-MCP principal will fail the deploy with
-          # "Caller provided credentials not allowed when resource policy
-          # is set".
-          CustomStatements:
-            - Effect: Allow
-              Principal:
-                AWS: !Ref PlatformMcpRoleArn
-              Action: execute-api:Invoke
-              Resource: !Sub "execute-api:/${StageName}/POST/erp/checkUserAccess"
+        # Resource policy is intentionally NOT set in this template.
+        # AWS::ApiGateway::Deployment runs an internal validation that
+        # requires the deploying principal to be in the resource policy,
+        # which conflicts with our goal of locking the API down to ONLY
+        # the Platform MCP role. The resource policy is therefore applied
+        # POST-DEPLOY by scripts/deploy-erp-handler.sh via aws CLI
+        # (`aws apigateway update-rest-api --patch-operations`), which
+        # doesn't trigger the validation. Until the policy is applied, the
+        # API is still locked from anonymous callers because of AWS_IAM
+        # auth — only authenticated AWS callers can reach it.
 
   ErpHandlerLambda:
     Type: AWS::Serverless::Function
