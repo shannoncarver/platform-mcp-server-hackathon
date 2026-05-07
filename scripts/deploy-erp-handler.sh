@@ -106,5 +106,20 @@ aws apigateway update-rest-api \
 
 echo "Resource policy applied. API ${ERP_API_ID} now locks to: ${PLATFORM_MCP_ROLE_ARN}"
 echo ""
-echo "Verify with:"
-echo "  aws apigateway get-rest-api --rest-api-id ${ERP_API_ID} --region ${REGION} --profile ${PROFILE} --query 'policy' --output text | python3 -m json.tool"
+echo "Verify with the following one-liner (AWS stores the policy with literal"
+echo "\\\" and \\/ escape sequences, so we unescape before parsing):"
+cat <<VERIFY
+
+  aws apigateway get-rest-api \\
+    --rest-api-id ${ERP_API_ID} \\
+    --region ${REGION} --profile ${PROFILE} \\
+    --output json | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+p = data.get('policy', '')
+if p:
+    print(json.dumps(json.loads(p.replace('\\\\\"', '\"').replace('\\\\/', '/')), indent=2))
+else:
+    print('No resource policy set.')
+"
+VERIFY
