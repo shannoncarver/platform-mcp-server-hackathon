@@ -71,22 +71,40 @@ if [[ -z "${ERP_API_ID}" ]]; then
   exit 3
 fi
 
-# JSON-escape the policy so it survives the patch-operations argument.
-POLICY_JSON=$(cat <<JSON
-{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"${PLATFORM_MCP_ROLE_ARN}"},"Action":"execute-api:Invoke","Resource":"execute-api:/*/POST/erp/checkUserAccess"}]}
-JSON
-)
-# Escape for `value=` in patch operations: replace double quotes with \" and slashes with \/.
-POLICY_ESCAPED=$(printf '%s' "${POLICY_JSON}" | sed -e 's/"/\\"/g' -e 's|/|\\/|g')
+# Build the patch-operations JSON with Python to avoid shell-escaping hell.
+# The resource policy itself becomes the `value` field of one patch op,
+# encoded as a JSON-escaped string. Python's json module handles the
+# nested-encoding correctly.
+PATCH_FILE=$(mktemp -t erp-policy-patch.XXXXXX.json)
+trap 'rm -f "${PATCH_FILE}"' EXIT
+
+PLATFORM_MCP_ROLE_ARN="${PLATFORM_MCP_ROLE_ARN}" python3 - <<'PY' > "${PATCH_FILE}"
+import json
+import os
+
+policy = {
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {"AWS": os.environ["PLATFORM_MCP_ROLE_ARN"]},
+            "Action": "execute-api:Invoke",
+            "Resource": "execute-api:/*/POST/erp/checkUserAccess",
+        }
+    ],
+}
+patch = [{"op": "replace", "path": "/policy", "value": json.dumps(policy)}]
+print(json.dumps(patch))
+PY
 
 aws apigateway update-rest-api \
   --rest-api-id "${ERP_API_ID}" \
   --region "${REGION}" \
   --profile "${PROFILE}" \
-  --patch-operations "op=replace,path=/policy,value=${POLICY_ESCAPED}" \
+  --patch-operations "file://${PATCH_FILE}" \
   > /dev/null
 
 echo "Resource policy applied. API ${ERP_API_ID} now locks to: ${PLATFORM_MCP_ROLE_ARN}"
 echo ""
 echo "Verify with:"
-echo "  aws apigateway get-rest-api --rest-api-id ${ERP_API_ID} --region ${REGION} --profile ${PROFILE} --query 'policy'"
+echo "  aws apigateway get-rest-api --rest-api-id ${ERP_API_ID} --region ${REGION} --profile ${PROFILE} --query 'policy' --output text | python3 -m json.tool"
