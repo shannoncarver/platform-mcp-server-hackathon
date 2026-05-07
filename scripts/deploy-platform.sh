@@ -3,17 +3,17 @@
 #
 # Prerequisites:
 #   - AWS CLI v2, AWS SAM CLI installed.
-#   - An AWS profile (default: `linq-platform`) configured to point at the
+#   - An AWS profile (default: `linq-platform-dev`) configured to point at the
 #     Platform Services account, with permissions to create the resources in
 #     infra/cfn/platform.yaml.
 #
 # Usage:
-#   ./scripts/deploy-platform.sh                # uses profile linq-platform
+#   ./scripts/deploy-platform.sh                # uses profile linq-platform-dev
 #   AWS_PROFILE=other-profile ./scripts/deploy-platform.sh
 
 set -euo pipefail
 
-PROFILE="${AWS_PROFILE:-linq-platform}"
+PROFILE="${AWS_PROFILE:-linq-platform-dev}"
 REGION="${AWS_REGION:-us-east-1}"
 STACK_NAME="${STACK_NAME:-platform-mcp-server}"
 TEMPLATE="infra/cfn/platform.yaml"

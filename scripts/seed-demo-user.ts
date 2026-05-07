@@ -1,7 +1,7 @@
 // Insert one row into platform_mcp_user_permissions for the demo user.
 //
 // Run after the Platform stack is deployed:
-//   AWS_PROFILE=linq-platform npx ts-node scripts/seed-demo-user.ts
+//   AWS_PROFILE=linq-platform-dev npx ts-node scripts/seed-demo-user.ts
 //
 // Override the email/tenant via env vars:
 //   DEMO_USER_EMAIL, DEMO_TENANT_ID, DEMO_PERMISSIONS (comma-separated)

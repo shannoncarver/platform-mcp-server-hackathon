@@ -6,7 +6,7 @@
 //
 // Run after both stacks deploy:
 //   ERP_API_URL=https://abc123.execute-api.us-east-1.amazonaws.com/prod/erp/checkUserAccess \
-//   AWS_PROFILE=linq-platform npx ts-node scripts/seed-tool-registry.ts
+//   AWS_PROFILE=linq-platform-dev npx ts-node scripts/seed-tool-registry.ts
 
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
