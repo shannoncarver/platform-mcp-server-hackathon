@@ -49,6 +49,9 @@ scripts/
   seed-tool-registry.ts        Insert demo tools into the DDB registry
   seed-demo-user.ts            Insert demo user into the permissions table
   demo-cli.ts                  End-to-end demo: SSO login → tools/call → result
+  platform-mcp-shim.ts         stdio MCP shim — Claude Code launches this as
+                               a local MCP server; the shim SigV4-signs each
+                               JSON-RPC frame onto the Platform MCP API GW
 ```
 
 ## Quickstart
@@ -76,6 +79,32 @@ npx ts-node scripts/seed-demo-user.ts
 aws sso login --profile platform-mcp
 npx ts-node scripts/demo-cli.ts
 ```
+
+## Using the Platform MCP Server from Claude Code
+
+Claude Code's native MCP transports don't natively SigV4-sign API Gateway requests. The included **stdio shim** (`scripts/platform-mcp-shim.ts`) bridges Claude Code's MCP-over-stdio transport to the Platform MCP API Gateway:
+
+1. Make sure your AWS SSO session is active:
+   ```sh
+   aws sso login --profile linq-platform-dev
+   ```
+2. Add the shim to your Claude Code MCP config:
+   ```json
+   {
+     "mcpServers": {
+       "linq-platform": {
+         "command": "npx",
+         "args": ["tsx", "/abs/path/to/platform-mcp-server-hackathon/scripts/platform-mcp-shim.ts"],
+         "env": {
+           "AWS_PROFILE": "linq-platform-dev",
+           "PLATFORM_MCP_URL": "https://<api-id>.execute-api.us-east-1.amazonaws.com/prod/jsonrpc"
+         }
+       }
+     }
+   }
+   ```
+3. Restart Claude Code. Tools from the Platform MCP server will appear in Claude Code's tool list (filtered by your DDB permissions row).
+4. Ask a prompt that maps to a tool. For example: *"Verify johndoe@example.com is authorized for ERP for tenant1"* — Claude Code picks `erp.checkUserAccess`, calls it via the shim → API Gateway → Platform MCP Lambda → ERP Lambda → DDB.
 
 ## Status
 

@@ -26,7 +26,6 @@ export function buildPermissions(
   return {
     user_email: "alice@linq.com",
     permissions: new Set(["erp:user:read"]),
-    tenant_id: "tenant-acme",
     last_modified_at: "2026-05-06T00:00:00Z",
     ...overrides,
   };

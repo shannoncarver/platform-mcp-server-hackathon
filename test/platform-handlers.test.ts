@@ -12,9 +12,12 @@ describe("whoami", () => {
       buildCaller(),
       buildPermissions({ permissions: new Set(["a", "b"]) }),
     )) as Record<string, unknown>;
-    expect(result.sub).toBe("alice@linq.com");
+    expect(result.email).toBe("alice@linq.com");
     expect(result.permission_set_name).toBe("PlatformMcpUser");
     expect((result.permissions as string[]).sort()).toEqual(["a", "b"]);
+    // platform.whoami no longer includes tenant_id — the platform has no
+    // concept of tenant.
+    expect(result.tenant_id).toBeUndefined();
   });
 });
 

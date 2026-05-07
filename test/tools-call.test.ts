@@ -60,7 +60,7 @@ describe("handleToolsCall — inline platform handlers", () => {
       startedAtMs: Date.now(),
     });
     const body = JSON.parse(result.body as string);
-    expect(body.result.structuredContent.sub).toBe("alice@linq.com");
+    expect(body.result.structuredContent.email).toBe("alice@linq.com");
   });
 
   it("dispatches platform.list_products and groups by namespace", async () => {

@@ -102,9 +102,20 @@ export async function handleToolsCall(
   }
 
   // Cross-account dispatch via SigV4.
+  //
+  // Wire shape to handlers:
+  //   { caller_email, request_id, arguments }
+  //
+  // - `caller_email` is metadata: the verified user who initiated the
+  //   request. Available for handler-side audit + handler-side scope
+  //   decisions (e.g., "can alice ask about bob?"). Never confused with
+  //   the operation's own inputs.
+  // - `request_id` enables cross-hop tracing.
+  // - `arguments` is whatever the user passed in `tools/call.params.arguments`,
+  //   verbatim. The handler reads operation inputs (including `tenant_id`,
+  //   if the tool accepts one) from here.
   const body = {
-    user_email: args.caller.user_email,
-    tenant_id: args.permissions.tenant_id,
+    caller_email: args.caller.user_email,
     request_id: args.requestId,
     arguments: args.params.arguments ?? {},
   };

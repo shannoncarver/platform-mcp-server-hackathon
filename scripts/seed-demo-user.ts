@@ -3,15 +3,18 @@
 // Run after the Platform stack is deployed:
 //   AWS_PROFILE=linq-platform-dev npx ts-node scripts/seed-demo-user.ts
 //
-// Override the email/tenant via env vars:
-//   DEMO_USER_EMAIL, DEMO_TENANT_ID, DEMO_PERMISSIONS (comma-separated)
+// Override the email or permission list via env vars:
+//   DEMO_USER_EMAIL, DEMO_PERMISSIONS (comma-separated)
+//
+// Note: the platform has no concept of tenant. Permissions are tool-scoped,
+// not tenant-scoped. If a user has the permission a tool requires, they can
+// invoke that tool for any tenant the tool accepts.
 
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
 
 const TABLE = process.env.USER_PERMISSIONS_TABLE_NAME ?? "platform_mcp_user_permissions";
 const EMAIL = process.env.DEMO_USER_EMAIL ?? "mshannoncarver@gmail.com";
-const TENANT = process.env.DEMO_TENANT_ID ?? "demo-tenant";
 const PERMISSIONS = (process.env.DEMO_PERMISSIONS ?? "erp:user:read")
   .split(",")
   .map((s) => s.trim())
@@ -23,7 +26,6 @@ async function main(): Promise<void> {
   const row = {
     user_email: EMAIL,
     permissions: new Set(PERMISSIONS),
-    tenant_id: TENANT,
     last_modified_at: now,
     last_modified_by: "scripts/seed-demo-user.ts",
   };
@@ -31,7 +33,6 @@ async function main(): Promise<void> {
   console.log(`Seeding ${TABLE}:`, {
     user_email: EMAIL,
     permissions: PERMISSIONS,
-    tenant_id: TENANT,
   });
   await ddb.send(new PutCommand({ TableName: TABLE, Item: row }));
   // eslint-disable-next-line no-console

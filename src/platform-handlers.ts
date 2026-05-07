@@ -12,12 +12,11 @@ export async function whoami(
   permissions: UserPermissions,
 ): Promise<unknown> {
   return {
-    sub: caller.user_email,
+    email: caller.user_email,
     caller_arn: caller.caller_arn,
     account_id: caller.account_id,
     permission_set_name: caller.permission_set_name,
     permissions: Array.from(permissions.permissions),
-    tenant_id: permissions.tenant_id,
   };
 }
 

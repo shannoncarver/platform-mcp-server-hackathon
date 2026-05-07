@@ -9,11 +9,16 @@ export interface Caller {
   permission_set_name?: string;
 }
 
-/** Fine-grained user permissions loaded from DynamoDB. */
+/**
+ * Fine-grained user permissions loaded from DynamoDB.
+ *
+ * The platform has no concept of tenant. A user with permission to invoke a
+ * tool can invoke it for any tenant the tool accepts. Tenant scope (if any)
+ * is enforced at the handler.
+ */
 export interface UserPermissions {
   user_email: string;
   permissions: Set<string>;
-  tenant_id?: string;
   last_modified_at: string;
   last_modified_by?: string;
 }

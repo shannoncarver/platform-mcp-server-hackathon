@@ -68,7 +68,6 @@ export const ddbPermissionsStore: PermissionsStore = {
     const value: UserPermissions = {
       user_email: item.user_email,
       permissions,
-      tenant_id: item.tenant_id,
       last_modified_at: item.last_modified_at ?? new Date().toISOString(),
       last_modified_by: item.last_modified_by,
     };

@@ -5,8 +5,17 @@
 // Trust model: the request body is trusted because the SigV4 signature
 // (validated by API Gateway) proves it originated from the Platform MCP
 // role. The handler does NOT validate JWTs; it does NOT re-authenticate
-// the user. Tenant scope is enforced here — that's what the architecture
-// asks of every product handler.
+// the user.
+//
+// Wire shape from the platform:
+//   { caller_email, request_id, arguments: { user_email, tenant_id } }
+//
+// - `caller_email` is the human who initiated the request (metadata).
+// - `arguments.user_email` is the SUBJECT — the user we're checking.
+// - `arguments.tenant_id` is the tenant to check the subject against.
+//
+// The platform has no concept of tenant; tenant scope (if any) is
+// the handler's concern.
 
 import type {
   APIGatewayProxyEvent,
@@ -30,11 +39,15 @@ function getClient(): DynamoDBDocumentClient {
   return docClient;
 }
 
-interface RequestBody {
+interface ToolArguments {
   user_email?: unknown;
   tenant_id?: unknown;
+}
+
+interface RequestBody {
+  caller_email?: unknown;
   request_id?: unknown;
-  arguments?: unknown;
+  arguments?: ToolArguments;
 }
 
 export interface ErpReader {
@@ -92,18 +105,25 @@ export async function handler(
     return badRequest("invalid JSON body");
   }
 
-  if (typeof body.user_email !== "string" || body.user_email.length === 0) {
-    return badRequest("user_email is required");
+  const args = body.arguments ?? {};
+  const subjectEmail = args.user_email;
+  const tenantId = args.tenant_id;
+
+  if (typeof subjectEmail !== "string" || subjectEmail.length === 0) {
+    return badRequest("arguments.user_email is required");
   }
-  if (typeof body.tenant_id !== "string" || body.tenant_id.length === 0) {
-    return badRequest("tenant_id is required");
+  if (typeof tenantId !== "string" || tenantId.length === 0) {
+    return badRequest("arguments.tenant_id is required");
   }
+
+  const requestId =
+    typeof body.request_id === "string" ? body.request_id : null;
 
   try {
     const [user_in_tenant, superuser, tenant] = await Promise.all([
-      activeReader.getUserInTenant(body.user_email, body.tenant_id),
-      activeReader.getSuperuser(body.user_email),
-      activeReader.getTenant(body.tenant_id),
+      activeReader.getUserInTenant(subjectEmail, tenantId),
+      activeReader.getSuperuser(subjectEmail),
+      activeReader.getTenant(tenantId),
     ]);
 
     const decision = decide({ user_in_tenant, superuser, tenant });
@@ -114,11 +134,12 @@ export async function handler(
         status: decision.status,
         reason: decision.reason,
       },
+      subject: { user_email: subjectEmail, tenant_id: tenantId },
       user_in_tenant: user_in_tenant ?? null,
       superuser: superuser ?? null,
       tenant: tenant ?? null,
       matched_user_record: decision.matched_user_record,
-      request_id: typeof body.request_id === "string" ? body.request_id : null,
+      request_id: requestId,
     });
   } catch (err) {
     return ok({
@@ -127,11 +148,12 @@ export async function handler(
         status: "ERROR",
         reason: (err as Error).message,
       },
+      subject: { user_email: subjectEmail, tenant_id: tenantId },
       user_in_tenant: null,
       superuser: null,
       tenant: null,
       matched_user_record: "none",
-      request_id: typeof body.request_id === "string" ? body.request_id : null,
+      request_id: requestId,
     });
   }
 }
