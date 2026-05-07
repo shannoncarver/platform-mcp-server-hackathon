@@ -118,8 +118,24 @@ Resources:
               # client_secret, token_endpoint, etc.). Cross-account `execute-api:Invoke`
               # is intentionally NOT granted — auth on the cross-account hop
               # is JWT (Bearer) over public HTTPS, not SigV4 + AWS_IAM.
+              # NOTE: this `https-jwt` secret-grant does NOT cover the
+              # `lambda-direct` Auth0 handler — that handler reads its own
+              # secret. The grant below covers `lambda-direct` instead.
               Resource:
                 - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:platform-mcp/*"
+            # `lambda-direct` dispatch pattern — in-account synchronous
+            # Lambda Invoke. Used for platform-team-owned handlers (the
+            # Auth0 management handler is the first such handler). Distinct
+            # from the `secretsmanager:GetSecretValue` grant above, which
+            # is only used by the `https-jwt` cross-account dispatcher.
+            # Function name is hardcoded via !Sub: same-account /
+            # same-region / stable name keeps this independent of the
+            # Auth0 stack's deploy order. See docs/dispatch-patterns.md.
+            - Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource:
+                - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:auth0-handler-platform-mcp"
       Events:
         JsonRpc:
           Type: HttpApi
