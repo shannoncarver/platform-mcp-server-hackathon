@@ -32,7 +32,16 @@ cd ../..
 echo "==> sam build (esbuild) ..."
 sam build --template "${TEMPLATE}"
 
+# LINQ env-aware table naming. The dev tables in linq-erp-dev are
+# `dev_erp_users` and `dev_erp_tenants` (per the verify-user-authorization
+# skill convention). Override the parameter defaults explicitly because
+# CloudFormation does NOT re-read parameter defaults during stack updates
+# once a value is in place.
+ERP_USERS_TABLE="${ERP_USERS_TABLE:-dev_erp_users}"
+ERP_TENANTS_TABLE="${ERP_TENANTS_TABLE:-dev_erp_tenants}"
+
 echo "==> sam deploy ..."
+echo "    Using tables: ${ERP_USERS_TABLE}, ${ERP_TENANTS_TABLE}"
 sam deploy \
   --stack-name "${STACK_NAME}" \
   --region "${REGION}" \
@@ -40,7 +49,10 @@ sam deploy \
   --capabilities CAPABILITY_IAM \
   --resolve-s3 \
   --no-confirm-changeset \
-  --no-fail-on-empty-changeset
+  --no-fail-on-empty-changeset \
+  --parameter-overrides \
+    "ErpUsersTableName=${ERP_USERS_TABLE}" \
+    "ErpTenantsTableName=${ERP_TENANTS_TABLE}"
 
 echo ""
 echo "==> Stack outputs:"

@@ -16,13 +16,22 @@ Description: >
 Parameters:
   ErpUsersTableName:
     Type: String
-    Default: erp_users
+    # LINQ convention: dev tables are prefixed with `dev_`; prod tables
+    # have no prefix (matches the verify-user-authorization skill).
+    Default: dev_erp_users
   ErpTenantsTableName:
     Type: String
-    Default: erp_tenants
+    Default: dev_erp_tenants
   StageName:
     Type: String
     Default: prod
+  ErpDdbKmsKeyArn:
+    Type: String
+    Default: arn:aws:kms:us-east-1:529394632305:key/a2d384af-cdd8-48d8-b42a-6fe837819d4e
+    Description: >-
+      ARN of the customer-managed KMS key that encrypts dev_erp_users and
+      dev_erp_tenants. The Lambda role needs kms:Decrypt on this key for
+      DynamoDB GetItem to succeed against the SSE-KMS-encrypted tables.
   CognitoDomainPrefix:
     Type: String
     Default: linq-erp-mcp
@@ -133,6 +142,18 @@ Resources:
               Resource:
                 - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ErpUsersTableName}"
                 - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ErpTenantsTableName}"
+            # Customer-managed KMS key encrypts both ERP tables. DDB GetItem
+            # is gated by kms:Decrypt on this key. Scoped via kms:ViaService
+            # so the role can only use the key through DynamoDB, not call
+            # KMS directly.
+            - Effect: Allow
+              Action:
+                - kms:Decrypt
+                - kms:DescribeKey
+              Resource: !Ref ErpDdbKmsKeyArn
+              Condition:
+                StringEquals:
+                  "kms:ViaService": !Sub "dynamodb.${AWS::Region}.amazonaws.com"
       Events:
         CheckUserAccess:
           Type: HttpApi

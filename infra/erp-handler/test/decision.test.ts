@@ -1,18 +1,30 @@
 import { decide, type DecisionInput } from "../src/decision.js";
 
 describe("decide — decision matrix", () => {
-  const baseUser = (sk: string) => ({
-    pk: "alice@linq.com",
-    sk,
-    is_active: true,
-  });
-  const baseTenant = (active = true) => ({ pk: "acme", is_active: active });
+  const userActive = { PK: "#USRID#alice@linq.com", SK: "#TEN#acme", status: "active" };
+  const userInactive = {
+    PK: "#USRID#alice@linq.com",
+    SK: "#TEN#acme",
+    status: "disabled",
+  };
+  const superuserActive = {
+    PK: "#USRID#alice@linq.com",
+    SK: "#TEN#superuser",
+    status: "active",
+  };
+  const superuserInactive = {
+    PK: "#USRID#alice@linq.com",
+    SK: "#TEN#superuser",
+    status: "disabled",
+  };
+  const tenantActive = { PK: "#TEN#acme", SK: "#TEN#", status: "active" };
+  const tenantInactive = { PK: "#TEN#acme", SK: "#TEN#", status: "disabled" };
 
   it("AUTHORIZED_USER — active user-in-tenant + active tenant", () => {
     const result = decide({
-      user_in_tenant: baseUser("acme"),
+      user_in_tenant: userActive,
       superuser: undefined,
-      tenant: baseTenant(true),
+      tenant: tenantActive,
     });
     expect(result.authorized).toBe(true);
     expect(result.status).toBe("AUTHORIZED_USER");
@@ -22,8 +34,8 @@ describe("decide — decision matrix", () => {
   it("AUTHORIZED_SUPERUSER — active superuser, active tenant", () => {
     const result = decide({
       user_in_tenant: undefined,
-      superuser: baseUser("SUPERUSER"),
-      tenant: baseTenant(true),
+      superuser: superuserActive,
+      tenant: tenantActive,
     });
     expect(result.authorized).toBe(true);
     expect(result.status).toBe("AUTHORIZED_SUPERUSER");
@@ -33,7 +45,7 @@ describe("decide — decision matrix", () => {
     const result = decide({
       user_in_tenant: undefined,
       superuser: undefined,
-      tenant: baseTenant(true),
+      tenant: tenantActive,
     });
     expect(result.authorized).toBe(false);
     expect(result.status).toBe("USER_NOT_FOUND");
@@ -42,9 +54,9 @@ describe("decide — decision matrix", () => {
 
   it("USER_DISABLED — user-in-tenant row inactive", () => {
     const result = decide({
-      user_in_tenant: { pk: "alice@linq.com", sk: "acme", is_active: false },
+      user_in_tenant: userInactive,
       superuser: undefined,
-      tenant: baseTenant(true),
+      tenant: tenantActive,
     });
     expect(result.authorized).toBe(false);
     expect(result.status).toBe("USER_DISABLED");
@@ -52,9 +64,9 @@ describe("decide — decision matrix", () => {
 
   it("TENANT_DISABLED — tenant row inactive blocks even an active user", () => {
     const result = decide({
-      user_in_tenant: baseUser("acme"),
+      user_in_tenant: userActive,
       superuser: undefined,
-      tenant: baseTenant(false),
+      tenant: tenantInactive,
     });
     expect(result.authorized).toBe(false);
     expect(result.status).toBe("TENANT_DISABLED");
@@ -62,9 +74,9 @@ describe("decide — decision matrix", () => {
 
   it("B1 — inactive superuser blocks even an active user-in-tenant", () => {
     const result = decide({
-      user_in_tenant: baseUser("acme"),
-      superuser: { pk: "alice@linq.com", sk: "SUPERUSER", is_active: false },
-      tenant: baseTenant(true),
+      user_in_tenant: userActive,
+      superuser: superuserInactive,
+      tenant: tenantActive,
     });
     expect(result.authorized).toBe(false);
     expect(result.status).toBe("SUPERUSER_DISABLED");
@@ -72,7 +84,7 @@ describe("decide — decision matrix", () => {
 
   it("B2 — missing tenant does NOT block an active user-in-tenant", () => {
     const result = decide({
-      user_in_tenant: baseUser("acme"),
+      user_in_tenant: userActive,
       superuser: undefined,
       tenant: undefined,
     });
@@ -83,7 +95,7 @@ describe("decide — decision matrix", () => {
   it("B2 — missing tenant does NOT block an active superuser", () => {
     const result = decide({
       user_in_tenant: undefined,
-      superuser: baseUser("SUPERUSER"),
+      superuser: superuserActive,
       tenant: undefined,
     });
     expect(result.authorized).toBe(true);
@@ -102,12 +114,22 @@ describe("decide — decision matrix", () => {
 
   it("active superuser overrides inactive user-in-tenant", () => {
     const input: DecisionInput = {
-      user_in_tenant: { pk: "alice@linq.com", sk: "acme", is_active: false },
-      superuser: { pk: "alice@linq.com", sk: "SUPERUSER", is_active: true },
-      tenant: baseTenant(true),
+      user_in_tenant: userInactive,
+      superuser: superuserActive,
+      tenant: tenantActive,
     };
     const result = decide(input);
     expect(result.authorized).toBe(true);
     expect(result.status).toBe("AUTHORIZED_SUPERUSER");
+  });
+
+  it("status is matched case-insensitively", () => {
+    const result = decide({
+      user_in_tenant: { ...userActive, status: "ACTIVE" },
+      superuser: undefined,
+      tenant: tenantActive,
+    });
+    expect(result.authorized).toBe(true);
+    expect(result.status).toBe("AUTHORIZED_USER");
   });
 });

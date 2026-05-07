@@ -56,10 +56,10 @@ describe("erp-handler", () => {
         // Subject must be the entity from arguments, NOT the caller.
         expect(email).toBe("alice@linq.com");
         expect(tenant).toBe("acme");
-        return { pk: email, sk: tenant, is_active: true };
+        return { PK: `#USRID#${email}`, SK: `#TEN#${tenant}`, status: "active" };
       },
       getSuperuser: async () => undefined,
-      getTenant: async () => ({ pk: "acme", is_active: true }),
+      getTenant: async () => ({ PK: "#TEN#acme", SK: "#TEN#", status: "active" }),
     });
     const result = await handler(
       buildEvent({

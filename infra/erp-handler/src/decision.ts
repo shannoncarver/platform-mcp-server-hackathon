@@ -1,14 +1,16 @@
 // erp.checkUserAccess — decision logic.
 //
-// The handler reads three DynamoDB rows and runs a deterministic decision
-// over them:
+// Mirrors the LINQ ERP HarmonyAuthAuthorize endpoint (and the
+// verify-user-authorization skill) and reads three DynamoDB rows:
 //
-//   1. user-in-tenant row: erp_users[pk=user_email, sk=tenant_id]
-//   2. superuser row:      erp_users[pk=user_email, sk="SUPERUSER"]
-//   3. tenant row:         erp_tenants[pk=tenant_id]
+//   1. user-in-tenant row: dev_erp_users[PK="#USRID#<email>", SK="#TEN#<tenant>"]
+//   2. superuser row:      dev_erp_users[PK="#USRID#<email>", SK="#TEN#superuser"]
+//   3. tenant row:         dev_erp_tenants[PK="#TEN#<tenant>", SK="#TEN#"]
 //
-// The decision tree mirrors the LINQ ERP HarmonyAuthAuthorize endpoint,
-// preserving two intentional behaviors:
+// Active-state is encoded as a `status` STRING attribute (case-insensitive
+// equality with "active"), not a boolean.
+//
+// Two intentional behaviors preserved from the C# endpoint:
 //
 //   B1. A superuser row that exists but is NOT 'active' prevents the
 //       user-in-tenant row from ever being consulted.
@@ -26,16 +28,19 @@ export type AuthStatus =
   | "TENANT_MISSING_USER_NOT_AUTHORIZED"
   | "ERROR";
 
+/**
+ * A row from `dev_erp_users`. Open shape — we only key on `status`. Any
+ * other attributes (PK, SK, user_email, etc.) ride through unchanged.
+ */
 export interface UserRow {
-  pk: string;
-  sk: string;
-  is_active: boolean;
-  roles?: string[];
+  status?: string;
+  [key: string]: unknown;
 }
 
+/** A row from `dev_erp_tenants`. Same open shape; only `status` is decisive. */
 export interface TenantRow {
-  pk: string;
-  is_active: boolean;
+  status?: string;
+  [key: string]: unknown;
 }
 
 export interface DecisionInput {
@@ -51,39 +56,45 @@ export interface DecisionResult {
   matched_user_record: "user_in_tenant" | "superuser" | "none";
 }
 
+function isActive(row: { status?: string } | undefined): boolean {
+  return (
+    row !== undefined &&
+    typeof row.status === "string" &&
+    row.status.trim().toLowerCase() === "active"
+  );
+}
+
 export function decide(input: DecisionInput): DecisionResult {
   const { user_in_tenant, superuser, tenant } = input;
 
-  // B1 — an inactive superuser row blocks all access, even if a valid
-  // user-in-tenant row exists.
-  if (superuser !== undefined && superuser.is_active === false) {
+  // B1 — superuser row exists but is NOT active → blocks all access,
+  // even if a valid user-in-tenant row is present.
+  if (superuser !== undefined && !isActive(superuser)) {
     return {
       authorized: false,
       status: "SUPERUSER_DISABLED",
-      reason: "superuser row exists and is_active=false",
+      reason: `superuser row exists with status=${JSON.stringify(superuser.status ?? null)}`,
       matched_user_record: "superuser",
     };
   }
 
-  // B2 — an inactive tenant row blocks access. A missing tenant row does NOT.
-  if (tenant !== undefined && tenant.is_active === false) {
+  // B2 — inactive tenant row blocks access. A missing tenant row does NOT.
+  if (tenant !== undefined && !isActive(tenant)) {
     return {
       authorized: false,
       status: "TENANT_DISABLED",
-      reason: "tenant row exists and is_active=false",
-      matched_user_record:
-        superuser !== undefined && superuser.is_active === true
-          ? "superuser"
-          : user_in_tenant !== undefined
-            ? "user_in_tenant"
-            : "none",
+      reason: `tenant row exists with status=${JSON.stringify(tenant.status ?? null)}`,
+      matched_user_record: isActive(superuser)
+        ? "superuser"
+        : user_in_tenant !== undefined
+          ? "user_in_tenant"
+          : "none",
     };
   }
 
   // Active superuser — authorize.
-  if (superuser !== undefined && superuser.is_active === true) {
+  if (isActive(superuser)) {
     if (tenant === undefined) {
-      // Tenant row missing; superuser is still authorized.
       return {
         authorized: true,
         status: "TENANT_MISSING_BUT_USER_AUTHORIZED",
@@ -99,7 +110,7 @@ export function decide(input: DecisionInput): DecisionResult {
     };
   }
 
-  // No superuser — fall through to the user-in-tenant row.
+  // No (active) superuser — fall through to the user-in-tenant row.
   if (user_in_tenant === undefined) {
     if (tenant === undefined) {
       return {
@@ -117,11 +128,11 @@ export function decide(input: DecisionInput): DecisionResult {
     };
   }
 
-  if (user_in_tenant.is_active === false) {
+  if (!isActive(user_in_tenant)) {
     return {
       authorized: false,
       status: "USER_DISABLED",
-      reason: "user-in-tenant row exists and is_active=false",
+      reason: `user-in-tenant row exists with status=${JSON.stringify(user_in_tenant.status ?? null)}`,
       matched_user_record: "user_in_tenant",
     };
   }

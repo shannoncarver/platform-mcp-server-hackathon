@@ -1,10 +1,8 @@
 // erp.checkUserAccess Lambda — runs in the linq-erp-dev account, fronted
-// by API Gateway REST v1 with AWS_IAM auth + a resource policy listing the
-// Platform MCP Lambda role ARN as the only allowed principal.
-//
-// Trust model: the request body is trusted because the SigV4 signature
-// (validated by API Gateway) proves it originated from the Platform MCP
-// role. The handler does NOT validate JWTs; it does NOT re-authenticate
+// by API Gateway HTTP API v2 with a JWT authorizer (Cognito User Pool).
+// The Platform MCP server obtains a JWT via OAuth 2.0 client_credentials
+// and presents it on the wire; this handler does NOT validate the JWT
+// (the API Gateway authorizer already did) and does NOT re-authenticate
 // the user.
 //
 // Wire shape from the platform:
@@ -16,6 +14,18 @@
 //
 // The platform has no concept of tenant; tenant scope (if any) is
 // the handler's concern.
+//
+// DynamoDB schema (matches the verify-user-authorization skill, the
+// existing source of truth for the LINQ ERP HarmonyAuthAuthorize logic):
+//   - dev_erp_users:
+//       PK = "#USRID#<email>"
+//       SK = "#TEN#<tenant_id>"  (regular user row)
+//       SK = "#TEN#superuser"    (superuser marker row)
+//       attribute `status` = "active" | "disabled" | ... (string, not bool)
+//   - dev_erp_tenants:
+//       PK = "#TEN#<tenant_id>"
+//       SK = "#TEN#"
+//       attribute `status` = "active" | "disabled" | ...
 
 import type {
   APIGatewayProxyEvent,
@@ -25,10 +35,9 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand } from "@aws-sdk/lib-dynamodb";
 import { decide, type TenantRow, type UserRow } from "./decision.js";
 
-const ERP_USERS_TABLE = process.env.ERP_USERS_TABLE_NAME ?? "erp_users";
+const ERP_USERS_TABLE = process.env.ERP_USERS_TABLE_NAME ?? "dev_erp_users";
 const ERP_TENANTS_TABLE =
-  process.env.ERP_TENANTS_TABLE_NAME ?? "erp_tenants";
-const SUPERUSER_SK_VALUE = process.env.ERP_SUPERUSER_SK ?? "SUPERUSER";
+  process.env.ERP_TENANTS_TABLE_NAME ?? "dev_erp_tenants";
 
 let docClient: DynamoDBDocumentClient | undefined;
 
@@ -64,7 +73,7 @@ const ddbReader: ErpReader = {
     const result = await getClient().send(
       new GetCommand({
         TableName: ERP_USERS_TABLE,
-        Key: { pk: email, sk: tenantId },
+        Key: { PK: `#USRID#${email}`, SK: `#TEN#${tenantId}` },
       }),
     );
     return result.Item as UserRow | undefined;
@@ -73,7 +82,7 @@ const ddbReader: ErpReader = {
     const result = await getClient().send(
       new GetCommand({
         TableName: ERP_USERS_TABLE,
-        Key: { pk: email, sk: SUPERUSER_SK_VALUE },
+        Key: { PK: `#USRID#${email}`, SK: "#TEN#superuser" },
       }),
     );
     return result.Item as UserRow | undefined;
@@ -82,7 +91,7 @@ const ddbReader: ErpReader = {
     const result = await getClient().send(
       new GetCommand({
         TableName: ERP_TENANTS_TABLE,
-        Key: { pk: tenantId },
+        Key: { PK: `#TEN#${tenantId}`, SK: "#TEN#" },
       }),
     );
     return result.Item as TenantRow | undefined;
