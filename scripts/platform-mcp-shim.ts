@@ -76,11 +76,17 @@ interface JsonRpcFrame {
   params?: unknown;
 }
 
+interface ProxyResult {
+  status: number;
+  body: string;
+}
+
 /**
- * Forward one JSON-RPC frame to the Platform MCP API and return the
- * raw response body (also a JSON-RPC frame).
+ * Forward one JSON-RPC frame to the Platform MCP API and return the raw
+ * response (status + body). Body is a JSON-RPC reply frame for requests,
+ * or empty for notifications (HTTP 204).
  */
-async function proxyFrame(rawLine: string): Promise<string> {
+async function proxyFrame(rawLine: string): Promise<ProxyResult> {
   const httpRequest = new HttpRequest({
     method: "POST",
     hostname: TARGET.hostname,
@@ -94,7 +100,7 @@ async function proxyFrame(rawLine: string): Promise<string> {
   });
   const signed = await getSigner().sign(httpRequest);
 
-  return await new Promise<string>((resolve, reject) => {
+  return await new Promise<ProxyResult>((resolve, reject) => {
     const req = https.request(
       {
         method: signed.method,
@@ -108,15 +114,16 @@ async function proxyFrame(rawLine: string): Promise<string> {
         res.on("data", (c: Buffer) => chunks.push(c));
         res.on("end", () => {
           const text = Buffer.concat(chunks).toString("utf8");
-          if ((res.statusCode ?? 0) < 200 || (res.statusCode ?? 0) >= 300) {
+          const status = res.statusCode ?? 0;
+          if (status < 200 || status >= 300) {
             reject(
               new Error(
-                `platform MCP returned HTTP ${res.statusCode}: ${text.slice(0, 500)}`,
+                `platform MCP returned HTTP ${status}: ${text.slice(0, 500)}`,
               ),
             );
             return;
           }
-          resolve(text);
+          resolve({ status, body: text });
         });
       },
     );
@@ -127,6 +134,16 @@ async function proxyFrame(rawLine: string): Promise<string> {
     req.write(rawLine);
     req.end();
   });
+}
+
+/** A JSON-RPC frame is a notification iff it has no `id` field. */
+function isNotificationFrame(rawLine: string): boolean {
+  try {
+    const parsed = JSON.parse(rawLine) as Record<string, unknown>;
+    return !("id" in parsed) || parsed.id === undefined;
+  } catch {
+    return false;
+  }
 }
 
 function emitErrorFrame(incoming: string, message: string): void {
@@ -159,13 +176,26 @@ const rl = readline.createInterface({ input: process.stdin, terminal: false });
 rl.on("line", (line) => {
   const trimmed = line.trim();
   if (trimmed.length === 0) return;
+  const notification = isNotificationFrame(trimmed);
   void proxyFrame(trimmed)
-    .then((response) => {
-      process.stdout.write(response.endsWith("\n") ? response : response + "\n");
+    .then((result) => {
+      // Per JSON-RPC 2.0: notifications must NOT receive a response.
+      // The server returns HTTP 204 with empty body for these; relay
+      // nothing to the MCP client.
+      if (notification || result.status === 204 || result.body.length === 0) {
+        return;
+      }
+      process.stdout.write(
+        result.body.endsWith("\n") ? result.body : result.body + "\n",
+      );
     })
     .catch((err) => {
       process.stderr.write(`[platform-mcp-shim] ${(err as Error).message}\n`);
-      emitErrorFrame(trimmed, (err as Error).message);
+      // Don't emit error frames for notifications either — clients don't
+      // expect any response.
+      if (!notification) {
+        emitErrorFrame(trimmed, (err as Error).message);
+      }
     });
 });
 

@@ -28237,15 +28237,16 @@ async function proxyFrame(rawLine) {
         res.on("data", (c5) => chunks.push(c5));
         res.on("end", () => {
           const text = Buffer.concat(chunks).toString("utf8");
-          if ((res.statusCode ?? 0) < 200 || (res.statusCode ?? 0) >= 300) {
+          const status = res.statusCode ?? 0;
+          if (status < 200 || status >= 300) {
             reject(
               new Error(
-                `platform MCP returned HTTP ${res.statusCode}: ${text.slice(0, 500)}`
+                `platform MCP returned HTTP ${status}: ${text.slice(0, 500)}`
               )
             );
             return;
           }
-          resolve(text);
+          resolve({ status, body: text });
         });
       }
     );
@@ -28256,6 +28257,14 @@ async function proxyFrame(rawLine) {
     req.write(rawLine);
     req.end();
   });
+}
+function isNotificationFrame(rawLine) {
+  try {
+    const parsed = JSON.parse(rawLine);
+    return !("id" in parsed) || parsed.id === void 0;
+  } catch {
+    return false;
+  }
 }
 function emitErrorFrame(incoming, message) {
   let id = null;
@@ -28281,12 +28290,20 @@ var rl = import_node_readline.default.createInterface({ input: process.stdin, te
 rl.on("line", (line) => {
   const trimmed = line.trim();
   if (trimmed.length === 0) return;
-  void proxyFrame(trimmed).then((response) => {
-    process.stdout.write(response.endsWith("\n") ? response : response + "\n");
+  const notification = isNotificationFrame(trimmed);
+  void proxyFrame(trimmed).then((result) => {
+    if (notification || result.status === 204 || result.body.length === 0) {
+      return;
+    }
+    process.stdout.write(
+      result.body.endsWith("\n") ? result.body : result.body + "\n"
+    );
   }).catch((err) => {
     process.stderr.write(`[platform-mcp-shim] ${err.message}
 `);
-    emitErrorFrame(trimmed, err.message);
+    if (!notification) {
+      emitErrorFrame(trimmed, err.message);
+    }
   });
 });
 rl.on("close", () => {

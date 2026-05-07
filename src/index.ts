@@ -29,6 +29,10 @@ const PROTOCOL_VERSION = "2025-06-18";
 const SERVER_NAME = "linq-platform-mcp";
 const SERVER_VERSION = "0.1.0";
 
+function noContent(): APIGatewayProxyStructuredResultV2 {
+  return { statusCode: 204, headers: {}, body: "" };
+}
+
 export async function handler(
   event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyStructuredResultV2> {
@@ -44,13 +48,43 @@ export async function handler(
   }
 
   let rpc: JsonRpcRequest;
+  let rawBody: Record<string, unknown>;
   try {
-    rpc = JSON.parse(event.body ?? "{}") as JsonRpcRequest;
+    rawBody = JSON.parse(event.body ?? "{}") as Record<string, unknown>;
+    rpc = rawBody as unknown as JsonRpcRequest;
   } catch {
     return badRequest(requestId, "invalid JSON body");
   }
+
+  // JSON-RPC 2.0 notification: a frame with no `id` field. Per spec, the
+  // server MUST NOT send a response. The MCP stdio shim relies on this:
+  // any HTTP body it receives gets forwarded back to the MCP client, so
+  // we must return HTTP 204 with no body for notifications. Common cases
+  // include `notifications/initialized` (sent by the MCP client right
+  // after a successful initialize), and `notifications/cancelled` /
+  // `notifications/progress`.
+  const isNotification =
+    !("id" in rawBody) ||
+    rawBody.id === undefined ||
+    (rpc.method?.startsWith("notifications/") ?? false);
+
   if (rpc.jsonrpc !== "2.0") {
+    if (isNotification) return noContent();
     return rpcError(rpc.id, RPC_INVALID_REQUEST, "Invalid JSON-RPC envelope", requestId);
+  }
+
+  if (isNotification) {
+    // Audit so we can see what came through, but don't respond.
+    await emitAudit({
+      request_id: requestId,
+      ts: new Date().toISOString(),
+      caller_email: caller.user_email,
+      caller_arn: caller.caller_arn,
+      method: rpc.method ?? "unknown",
+      decision: "allow",
+      latency_ms: Date.now() - startedAtMs,
+    });
+    return noContent();
   }
 
   let permissions;
