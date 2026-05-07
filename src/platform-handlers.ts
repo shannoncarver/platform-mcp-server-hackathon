@@ -26,7 +26,10 @@ export async function listProducts(
   const projected = await getProjected(permissions.permissions);
   const namespaces = new Map<string, number>();
   for (const item of projected) {
-    const ns = item.toolId.split(".")[0];
+    // Tool IDs use single-underscore namespace separation
+    // (e.g. `erp_checkUserAccess`, `platform_whoami`). Anthropic tool-name
+    // validation forbids dots, so the first underscore is the separator.
+    const ns = item.toolId.split("_")[0];
     if (ns === "platform") continue; // platform isn't a product
     namespaces.set(ns, (namespaces.get(ns) ?? 0) + 1);
   }

@@ -57,13 +57,13 @@ export async function handleToolsCall(
     let result: unknown;
     try {
       switch (item.toolId) {
-        case "platform.whoami":
+        case "platform_whoami":
           result = await whoami(args.caller, args.permissions);
           break;
-        case "platform.list_products":
+        case "platform_list_products":
           result = await listProducts(args.permissions);
           break;
-        case "platform.search_tools": {
+        case "platform_search_tools": {
           const argsObj = (args.params.arguments ?? {}) as {
             query?: string;
             limit?: number;

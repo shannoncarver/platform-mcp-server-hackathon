@@ -1,8 +1,19 @@
 // Seed the platform_mcp_tool_registry table with the four V1 tools:
-//   - platform.whoami         (inline)
-//   - platform.list_products  (inline)
-//   - platform.search_tools   (inline)
-//   - erp.checkUserAccess     (https-jwt → ERP API GW in linq-erp-dev)
+//   - platform_whoami         (inline)
+//   - platform_list_products  (inline)
+//   - platform_search_tools   (inline)
+//   - erp_checkUserAccess     (https-jwt → ERP API GW in linq-erp-dev)
+//
+// Tool names use single-underscore namespace separation (e.g.
+// `platform_whoami`) instead of dotted form (`platform.whoami`) because
+// Anthropic API surfaces validate tool names against
+// `^[a-zA-Z0-9_-]{1,64}$`, which forbids the dot character. Claude
+// Desktop's chat tab enforces this at submit time and otherwise refuses
+// the conversation. Underscores are accepted everywhere.
+//
+// This script is also a tombstone purger: any registry row whose
+// toolId is NOT in the seed list below gets deleted, so renames
+// don't leave orphans behind. Idempotent.
 //
 // Run after both stacks deploy and `seed-jwt-secret.ts` has populated the
 // JWT credentials secret in linq-platform-dev:
@@ -13,7 +24,12 @@
 //   AWS_PROFILE=linq-platform-dev npx tsx scripts/seed-tool-registry.ts
 
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
+import {
+  DynamoDBDocumentClient,
+  DeleteCommand,
+  PutCommand,
+  ScanCommand,
+} from "@aws-sdk/lib-dynamodb";
 
 const TABLE = process.env.TOOL_REGISTRY_TABLE_NAME ?? "platform_mcp_tool_registry";
 
@@ -35,7 +51,7 @@ const NOW = new Date().toISOString();
 
 const tools = [
   {
-    toolId: "platform.whoami",
+    toolId: "platform_whoami",
     version: "1.0.0",
     status: "active",
     title: "Identity echo",
@@ -49,7 +65,7 @@ const tools = [
     updatedAt: NOW,
   },
   {
-    toolId: "platform.list_products",
+    toolId: "platform_list_products",
     version: "1.0.0",
     status: "active",
     title: "List visible product namespaces",
@@ -63,7 +79,7 @@ const tools = [
     updatedAt: NOW,
   },
   {
-    toolId: "platform.search_tools",
+    toolId: "platform_search_tools",
     version: "1.0.0",
     status: "active",
     title: "Search the tool registry",
@@ -85,7 +101,7 @@ const tools = [
     updatedAt: NOW,
   },
   {
-    toolId: "erp.checkUserAccess",
+    toolId: "erp_checkUserAccess",
     version: "1.0.0",
     status: "active",
     title: "Check ERP user access",
@@ -115,13 +131,33 @@ const tools = [
 
 async function main(): Promise<void> {
   const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+
+  // Purge tombstones — any row whose toolId is not in the seed list. This
+  // keeps the registry consistent across rename migrations.
+  const desiredIds = new Set(tools.map((t) => t.toolId));
+  const scanResult = await ddb.send(
+    new ScanCommand({ TableName: TABLE, ProjectionExpression: "toolId" }),
+  );
+  const orphans = (scanResult.Items ?? [])
+    .map((it) => it.toolId as string)
+    .filter((id) => !desiredIds.has(id));
+  for (const id of orphans) {
+    // eslint-disable-next-line no-console
+    console.log(`Purging orphan: ${id}`);
+    await ddb.send(
+      new DeleteCommand({ TableName: TABLE, Key: { toolId: id } }),
+    );
+  }
+
   for (const tool of tools) {
     // eslint-disable-next-line no-console
     console.log(`Seeding ${TABLE}: ${tool.toolId} (${tool.version})`);
     await ddb.send(new PutCommand({ TableName: TABLE, Item: tool }));
   }
   // eslint-disable-next-line no-console
-  console.log(`Done. ${tools.length} tools seeded.`);
+  console.log(
+    `Done. ${tools.length} tools seeded; ${orphans.length} orphan(s) purged.`,
+  );
 }
 
 main().catch((err) => {

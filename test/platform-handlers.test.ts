@@ -15,7 +15,7 @@ describe("whoami", () => {
     expect(result.email).toBe("alice@linq.com");
     expect(result.permission_set_name).toBe("PlatformMcpUser");
     expect((result.permissions as string[]).sort()).toEqual(["a", "b"]);
-    // platform.whoami no longer includes tenant_id — the platform has no
+    // platform_whoami no longer includes tenant_id — the platform has no
     // concept of tenant.
     expect(result.tenant_id).toBeUndefined();
   });
@@ -24,11 +24,11 @@ describe("whoami", () => {
 describe("listProducts", () => {
   it("groups projected tools by namespace and excludes platform", async () => {
     installRegistryStore([
-      buildRegistryItem({ toolId: "erp.a", requiredPermissions: [] }),
-      buildRegistryItem({ toolId: "erp.b", requiredPermissions: [] }),
-      buildRegistryItem({ toolId: "crm.a", requiredPermissions: [] }),
+      buildRegistryItem({ toolId: "erp_a", requiredPermissions: [] }),
+      buildRegistryItem({ toolId: "erp_b", requiredPermissions: [] }),
+      buildRegistryItem({ toolId: "crm_a", requiredPermissions: [] }),
       buildRegistryItem({
-        toolId: "platform.whoami",
+        toolId: "platform_whoami",
         requiredPermissions: [],
       }),
     ]);
@@ -48,12 +48,12 @@ describe("listProducts", () => {
 describe("searchTools", () => {
   it("regex-matches against the projected catalog", async () => {
     installRegistryStore([
-      buildRegistryItem({ toolId: "erp.checkUserAccess", requiredPermissions: [] }),
-      buildRegistryItem({ toolId: "erp.listUsers", requiredPermissions: [] }),
-      buildRegistryItem({ toolId: "crm.listAccounts", requiredPermissions: [] }),
+      buildRegistryItem({ toolId: "erp_checkUserAccess", requiredPermissions: [] }),
+      buildRegistryItem({ toolId: "erp_listUsers", requiredPermissions: [] }),
+      buildRegistryItem({ toolId: "crm_listAccounts", requiredPermissions: [] }),
     ]);
     const result = (await searchTools(
-      "^erp\\.",
+      "^erp_",
       buildPermissions({ permissions: new Set() }),
     )) as {
       content: {
@@ -64,8 +64,8 @@ describe("searchTools", () => {
     };
     const refs = result.content[0].tool_search_tool_search_result.tool_references;
     expect(refs.map((r) => r.tool_name).sort()).toEqual([
-      "erp.checkUserAccess",
-      "erp.listUsers",
+      "erp_checkUserAccess",
+      "erp_listUsers",
     ]);
   });
 
@@ -82,7 +82,7 @@ describe("searchTools", () => {
   it("returns empty when the user's projection is empty (RBAC negative)", async () => {
     installRegistryStore([
       buildRegistryItem({
-        toolId: "erp.x",
+        toolId: "erp_x",
         requiredPermissions: ["erp:user:read"],
       }),
     ]);

@@ -79,11 +79,11 @@ describe("handleToolsList", () => {
   it("filters by user permissions (RBAC negative)", async () => {
     installRegistryStore([
       buildRegistryItem({
-        toolId: "erp.checkUserAccess",
+        toolId: "erp_checkUserAccess",
         requiredPermissions: ["erp:user:read"],
       }),
       buildRegistryItem({
-        toolId: "platform.whoami",
+        toolId: "platform_whoami",
         requiredPermissions: [],
       }),
     ]);
@@ -94,7 +94,7 @@ describe("handleToolsList", () => {
     });
     const body = JSON.parse(result.body as string);
     expect(body.result.tools.map((t: { name: string }) => t.name)).toEqual([
-      "platform.whoami",
+      "platform_whoami",
     ]);
   });
 });

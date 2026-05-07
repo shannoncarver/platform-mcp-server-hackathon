@@ -11,7 +11,7 @@
 //
 //   AWS_PROFILE=platform-mcp \
 //     PLATFORM_MCP_URL=https://... \
-//     npx ts-node scripts/demo-cli.ts tools/call erp.checkUserAccess \
+//     npx ts-node scripts/demo-cli.ts tools/call erp_checkUserAccess \
 //       '{"user_email":"alice@linq.com","tenant_id":"acme"}'
 
 import { defaultProvider } from "@aws-sdk/credential-provider-node";

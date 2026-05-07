@@ -35,7 +35,7 @@ export function buildRegistryItem(
   overrides: Partial<RegistryItem> = {},
 ): RegistryItem {
   return {
-    toolId: "erp.checkUserAccess",
+    toolId: "erp_checkUserAccess",
     version: "1.0.0",
     status: "active",
     description: "Check ERP user access for a tenant.",
@@ -56,7 +56,7 @@ export function buildRegistryItem(
 
 export function buildPlatformWhoamiItem(): RegistryItem {
   return buildRegistryItem({
-    toolId: "platform.whoami",
+    toolId: "platform_whoami",
     description: "Identity echo.",
     title: "Whoami",
     requiredPermissions: [],
@@ -66,7 +66,7 @@ export function buildPlatformWhoamiItem(): RegistryItem {
 
 export function buildPlatformListProductsItem(): RegistryItem {
   return buildRegistryItem({
-    toolId: "platform.list_products",
+    toolId: "platform_list_products",
     description: "List visible product namespaces.",
     requiredPermissions: [],
     dispatchTarget: { kind: "inline" },
@@ -75,7 +75,7 @@ export function buildPlatformListProductsItem(): RegistryItem {
 
 export function buildPlatformSearchToolsItem(): RegistryItem {
   return buildRegistryItem({
-    toolId: "platform.search_tools",
+    toolId: "platform_search_tools",
     description: "Search the tool registry by regex.",
     requiredPermissions: [],
     dispatchTarget: { kind: "inline" },

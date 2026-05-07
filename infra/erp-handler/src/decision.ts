@@ -1,4 +1,4 @@
-// erp.checkUserAccess — decision logic.
+// erp_checkUserAccess — decision logic.
 //
 // Mirrors the LINQ ERP HarmonyAuthAuthorize endpoint (and the
 // verify-user-authorization skill) and reads three DynamoDB rows:

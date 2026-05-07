@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: >
   ERP product handler for the LINQ Platform MCP Server. Deploys to the
-  linq-erp-dev AWS account: a Lambda implementing erp.checkUserAccess,
+  linq-erp-dev AWS account: a Lambda implementing erp_checkUserAccess,
   fronted by an API Gateway HTTP API v2 with a JWT authorizer backed by
   a Cognito User Pool. Cross-account access from the Platform MCP server
   uses the OAuth 2.0 client-credentials grant — no cross-account IAM is
@@ -129,7 +129,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: erp-check-user-access
-      Description: erp.checkUserAccess product handler.
+      Description: erp_checkUserAccess product handler.
       CodeUri: ../
       Handler: index.handler
       Policies:
@@ -174,7 +174,7 @@ Resources:
 
 Outputs:
   ErpApiUrl:
-    Description: Full URL for invoking erp.checkUserAccess.
+    Description: Full URL for invoking erp_checkUserAccess.
     Value: !Sub "https://${ErpApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/erp/checkUserAccess"
     Export:
       Name: ErpCheckUserAccessUrl

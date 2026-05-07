@@ -1,4 +1,4 @@
-// erp.checkUserAccess Lambda — runs in the linq-erp-dev account, fronted
+// erp_checkUserAccess Lambda — runs in the linq-erp-dev account, fronted
 // by API Gateway HTTP API v2 with a JWT authorizer (Cognito User Pool).
 // The Platform MCP server obtains a JWT via OAuth 2.0 client_credentials
 // and presents it on the wire; this handler does NOT validate the JWT

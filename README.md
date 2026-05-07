@@ -33,12 +33,12 @@ src/
   registry.ts                  DDB-backed tool registry + per-user projection
   audit.ts                     Single per-request structured-JSON record
   errors.ts                    JSON-RPC + HTTP error envelopes
-  sigv4-dispatcher.ts          SigV4-signed HTTPS to per-product API Gateway
-  platform-handlers.ts         platform.whoami, platform.list_products
+  jwt-dispatcher.ts            OAuth client_credentials + Bearer-JWT to per-product API GW
+  secrets-store.ts             Secrets Manager wrapper with cache
+  platform-handlers.ts         platform_whoami, platform_list_products, platform_search_tools
   routes/
     tools-list.ts              tools/list with cursor pagination
     tools-call.ts              tools/call dispatch
-    tools-search.ts            platform.search_tools (returns tool_reference[])
 test/                          Jest suite
 infra/
   cfn/platform.yaml            Platform infra: DDB, Lambda, API Gateway, IAM
@@ -139,7 +139,7 @@ Quit and relaunch Claude Desktop. Click the 🔌 icon in a conversation to see `
 
 ### Use it
 
-In either app, ask a prompt that maps to a tool. For example: *"Verify johndoe@example.com is authorized for ERP for tenant1"* — Claude picks `erp.checkUserAccess`, the shim signs the request, and the chain runs through API Gateway → Platform MCP Lambda → ERP Lambda → DynamoDB.
+In either app, ask a prompt that maps to a tool. For example: *"Verify johndoe@example.com is authorized for ERP for tenant1"* — Claude picks `erp_checkUserAccess`, the shim signs the request, and the chain runs through API Gateway → Platform MCP Lambda → ERP Lambda → DynamoDB.
 
 ## Status
 

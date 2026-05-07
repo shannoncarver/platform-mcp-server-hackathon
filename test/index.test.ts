@@ -14,7 +14,7 @@ describe("handler — top-level routing", () => {
     installPermissionsStore({ "alice@linq.com": buildPermissions() });
     installRegistryStore([
       buildPlatformWhoamiItem(),
-      buildRegistryItem({ toolId: "erp.checkUserAccess" }),
+      buildRegistryItem({ toolId: "erp_checkUserAccess" }),
     ]);
     captureAudit();
   });
