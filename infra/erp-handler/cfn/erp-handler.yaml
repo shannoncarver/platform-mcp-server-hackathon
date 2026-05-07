@@ -1,0 +1,103 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  ERP product handler for the LINQ Platform MCP Server. Deploys to the
+  linq-erp-dev AWS account: a Lambda implementing erp.checkUserAccess,
+  fronted by an API Gateway REST API v1 with AWS_IAM auth and a resource
+  policy that whitelists exactly one principal — the Platform MCP Lambda's
+  role ARN.
+
+Parameters:
+  PlatformMcpRoleArn:
+    Type: String
+    Description: >-
+      ARN of the Platform MCP Lambda role (output PlatformMcpLambdaRoleArn
+      from the platform stack). The resource policy permits this principal
+      to invoke the API and rejects all others.
+  ErpUsersTableName:
+    Type: String
+    Default: erp_users
+  ErpTenantsTableName:
+    Type: String
+    Default: erp_tenants
+  StageName:
+    Type: String
+    Default: prod
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    MemorySize: 256
+    Timeout: 15
+    Architectures:
+      - arm64
+    Environment:
+      Variables:
+        ERP_USERS_TABLE_NAME: !Ref ErpUsersTableName
+        ERP_TENANTS_TABLE_NAME: !Ref ErpTenantsTableName
+        NODE_OPTIONS: "--enable-source-maps"
+
+Resources:
+  ErpApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref StageName
+      EndpointConfiguration:
+        Type: REGIONAL
+      Auth:
+        DefaultAuthorizer: AWS_IAM
+        ResourcePolicy:
+          # Cross-account: ONLY the Platform MCP Lambda role may invoke this
+          # API. Anyone else (even with valid SigV4 from another principal)
+          # gets 403.
+          CustomStatements:
+            - Effect: Allow
+              Principal:
+                AWS: !Ref PlatformMcpRoleArn
+              Action: execute-api:Invoke
+              Resource: !Sub "execute-api:/${StageName}/POST/erp/checkUserAccess"
+            - Effect: Deny
+              Principal: "*"
+              Action: execute-api:Invoke
+              Resource: !Sub "execute-api:/${StageName}/POST/erp/checkUserAccess"
+              Condition:
+                ArnNotEquals:
+                  aws:PrincipalArn: !Ref PlatformMcpRoleArn
+
+  ErpHandlerLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: erp-check-user-access
+      Description: erp.checkUserAccess product handler.
+      CodeUri: ../
+      Handler: dist/index.handler
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+              Resource:
+                - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ErpUsersTableName}"
+                - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ErpTenantsTableName}"
+      Events:
+        CheckUserAccess:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ErpApi
+            Method: POST
+            Path: /erp/checkUserAccess
+    Metadata:
+      BuildMethod: makefile
+
+Outputs:
+  ErpApiUrl:
+    Description: Full URL for invoking erp.checkUserAccess.
+    Value: !Sub "https://${ErpApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/erp/checkUserAccess"
+    Export:
+      Name: ErpCheckUserAccessUrl
+
+  ErpApiId:
+    Description: API Gateway REST API ID.
+    Value: !Ref ErpApi

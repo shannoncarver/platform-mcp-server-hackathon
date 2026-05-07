@@ -1,0 +1,181 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  LINQ Platform MCP Server (V1). DynamoDB tables for the user-permissions
+  store and the tool registry, a Lambda fronted by an HTTP API v2 with
+  AWS_IAM auth, and a CloudWatch Logs group for the per-request audit
+  records. Per ADR 0025.
+
+Parameters:
+  StageName:
+    Type: String
+    Default: prod
+    Description: API Gateway stage name.
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    MemorySize: 512
+    Timeout: 30
+    Architectures:
+      - arm64
+    Environment:
+      Variables:
+        USER_PERMISSIONS_TABLE_NAME: !Ref UserPermissionsTable
+        TOOL_REGISTRY_TABLE_NAME: !Ref ToolRegistryTable
+        NODE_OPTIONS: "--enable-source-maps"
+
+Resources:
+  # ---------- DynamoDB ----------
+
+  UserPermissionsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: platform_mcp_user_permissions
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: user_email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_email
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: linq:purpose
+          Value: platform-mcp-user-permissions
+
+  ToolRegistryTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: platform_mcp_tool_registry
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: toolId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: toolId
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: linq:purpose
+          Value: platform-mcp-tool-registry
+
+  # ---------- CloudWatch Logs (audit sink) ----------
+
+  AuditLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: /linq/platform-mcp/audit
+      RetentionInDays: 90
+
+  # ---------- Lambda + IAM ----------
+
+  PlatformMcpLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: platform-mcp-server
+      Description: LINQ Platform MCP Server entry handler.
+      CodeUri: ../../
+      Handler: dist/index.handler
+      ReservedConcurrentExecutions: 10
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:Scan
+                - dynamodb:Query
+              Resource:
+                - !GetAtt UserPermissionsTable.Arn
+                - !GetAtt ToolRegistryTable.Arn
+            - Effect: Allow
+              Action:
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/linq/platform-mcp/audit:*"
+            - Effect: Allow
+              Action:
+                - execute-api:Invoke
+              # Permits SigV4 calls to per-product API Gateways across LINQ
+              # accounts. The cross-account target's resource policy is the
+              # additional gate; this side just needs the identity-based
+              # allowance. Tighten when product accounts onboard.
+              Resource:
+                - "arn:aws:execute-api:*:*:*/*/*/erp/*"
+                - "arn:aws:execute-api:*:*:*/*/*/crm/*"
+                - "arn:aws:execute-api:*:*:*/*/*/dwh/*"
+                - "arn:aws:execute-api:*:*:*/*/*/support/*"
+      Events:
+        JsonRpc:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref PlatformMcpApi
+            Method: POST
+            Path: /jsonrpc
+    Metadata:
+      BuildMethod: makefile
+
+  # ---------- API Gateway HTTP API v2 (AWS_IAM auth on /jsonrpc) ----------
+
+  PlatformMcpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref StageName
+      Auth:
+        Authorizers: {}
+        # Default authorization: AWS_IAM. Routes that opt out would set
+        # AuthorizationType: NONE explicitly. Our only route (/jsonrpc)
+        # inherits this default.
+        DefaultAuthorizer: AWS_IAM
+        EnableIamAuthorizer: true
+      AccessLogSettings:
+        DestinationArn: !GetAtt AccessLogGroup.Arn
+        Format: >-
+          {"requestId":"$context.requestId","userArn":"$context.authorizer.iam.userArn","status":"$context.status","integrationStatus":"$context.integrationStatus","latency":"$context.responseLatency"}
+
+  AccessLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: /linq/platform-mcp/access
+      RetentionInDays: 30
+
+Outputs:
+  PlatformMcpApiUrl:
+    Description: Base URL for the Platform MCP HTTP API.
+    Value: !Sub "https://${PlatformMcpApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
+    Export:
+      Name: PlatformMcpApiUrl
+
+  PlatformMcpLambdaRoleArn:
+    Description: IAM role ARN that the Platform MCP Lambda assumes. Use this in the per-product API Gateway resource policies.
+    Value: !GetAtt PlatformMcpLambdaRole.Arn
+    Export:
+      Name: PlatformMcpLambdaRoleArn
+
+  UserPermissionsTableName:
+    Description: Name of the user-permissions DynamoDB table.
+    Value: !Ref UserPermissionsTable
+    Export:
+      Name: PlatformMcpUserPermissionsTable
+
+  ToolRegistryTableName:
+    Description: Name of the tool-registry DynamoDB table.
+    Value: !Ref ToolRegistryTable
+    Export:
+      Name: PlatformMcpToolRegistryTable
