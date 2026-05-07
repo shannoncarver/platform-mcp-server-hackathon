@@ -8,10 +8,10 @@
   },
   "main": "dist/index.js",
   "bin": {
-    "platform-mcp-shim": "dist/platform-mcp-shim.js"
+    "platform-mcp-shim": "bin/platform-mcp-shim.js"
   },
   "files": [
-    "dist/",
+    "bin/",
     "scripts/platform-mcp-shim.ts",
     "src/",
     "README.md",
@@ -19,8 +19,7 @@
   ],
   "scripts": {
     "build": "tsc",
-    "build:shim": "esbuild scripts/platform-mcp-shim.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/platform-mcp-shim.js",
-    "prepare": "npm run build:shim && chmod +x dist/platform-mcp-shim.js",
+    "build:shim": "esbuild scripts/platform-mcp-shim.ts --bundle --platform=node --target=node20 --format=cjs --outfile=bin/platform-mcp-shim.js && chmod +x bin/platform-mcp-shim.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "lint": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
