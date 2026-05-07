@@ -2,7 +2,7 @@
 //
 // These never cross account boundaries — they read the verified caller and
 // the registry, then return data. Dispatched directly by `routes/tools-call.ts`
-// when a tool's `productApiUrl` is the special value `inline://`.
+// when a tool's `dispatchTarget.kind === "inline"`.
 
 import type { Caller, RegistryItem, UserPermissions } from "./types.js";
 import { getProjected } from "./registry.js";

@@ -43,8 +43,13 @@ export function buildRegistryItem(
     inputSchema: { type: "object", properties: {} },
     outputSchema: { type: "object" },
     requiredPermissions: ["erp:user:read"],
-    productApiUrl:
-      "https://abc123.execute-api.us-east-1.amazonaws.com/prod/erp/checkUserAccess",
+    dispatchTarget: {
+      kind: "https-jwt",
+      url: "https://abc123.execute-api.us-east-1.amazonaws.com/prod/erp/checkUserAccess",
+      tokenSecretArn:
+        "arn:aws:secretsmanager:us-east-1:111111111111:secret:platform-mcp/erp/jwt-creds",
+      scope: "linq-erp-mcp/erp.invoke",
+    },
     ...overrides,
   };
 }
@@ -55,7 +60,7 @@ export function buildPlatformWhoamiItem(): RegistryItem {
     description: "Identity echo.",
     title: "Whoami",
     requiredPermissions: [],
-    productApiUrl: "inline://",
+    dispatchTarget: { kind: "inline" },
   });
 }
 
@@ -64,7 +69,7 @@ export function buildPlatformListProductsItem(): RegistryItem {
     toolId: "platform.list_products",
     description: "List visible product namespaces.",
     requiredPermissions: [],
-    productApiUrl: "inline://",
+    dispatchTarget: { kind: "inline" },
   });
 }
 
@@ -73,7 +78,7 @@ export function buildPlatformSearchToolsItem(): RegistryItem {
     toolId: "platform.search_tools",
     description: "Search the tool registry by regex.",
     requiredPermissions: [],
-    productApiUrl: "inline://",
+    dispatchTarget: { kind: "inline" },
   });
 }
 

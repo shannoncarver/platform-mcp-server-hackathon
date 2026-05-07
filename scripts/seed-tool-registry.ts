@@ -1,12 +1,16 @@
 // Seed the platform_mcp_tool_registry table with the four V1 tools:
-//   - platform.whoami         (inline://)
-//   - platform.list_products  (inline://)
-//   - platform.search_tools   (inline://)
-//   - erp.checkUserAccess     (URL of the ERP API Gateway in linq-erp-dev)
+//   - platform.whoami         (inline)
+//   - platform.list_products  (inline)
+//   - platform.search_tools   (inline)
+//   - erp.checkUserAccess     (https-jwt → ERP API GW in linq-erp-dev)
 //
-// Run after both stacks deploy:
+// Run after both stacks deploy and `seed-jwt-secret.ts` has populated the
+// JWT credentials secret in linq-platform-dev:
+//
 //   ERP_API_URL=https://abc123.execute-api.us-east-1.amazonaws.com/prod/erp/checkUserAccess \
-//   AWS_PROFILE=linq-platform-dev npx ts-node scripts/seed-tool-registry.ts
+//   ERP_JWT_SECRET_ARN=arn:aws:secretsmanager:us-east-1:631916786699:secret:platform-mcp/erp/jwt-creds-XXXX \
+//   ERP_SCOPE=linq-erp-mcp/erp.invoke \
+//   AWS_PROFILE=linq-platform-dev npx tsx scripts/seed-tool-registry.ts
 
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
@@ -14,10 +18,15 @@ import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
 const TABLE = process.env.TOOL_REGISTRY_TABLE_NAME ?? "platform_mcp_tool_registry";
 
 const ERP_API_URL = process.env.ERP_API_URL;
-if (ERP_API_URL === undefined) {
+const ERP_JWT_SECRET_ARN = process.env.ERP_JWT_SECRET_ARN;
+const ERP_SCOPE = process.env.ERP_SCOPE ?? "linq-erp-mcp/erp.invoke";
+if (ERP_API_URL === undefined || ERP_JWT_SECRET_ARN === undefined) {
   // eslint-disable-next-line no-console
   console.error(
-    "ERP_API_URL is required (output ErpApiUrl from the erp-handler stack).",
+    "ERP_API_URL and ERP_JWT_SECRET_ARN are required. Get the URL from the\n" +
+      "erp-handler-platform-mcp stack (ErpApiUrl output) and the secret ARN\n" +
+      "from `scripts/seed-jwt-secret.ts`'s output (which prints it after\n" +
+      "writing the secret).",
   );
   process.exit(2);
 }
@@ -35,7 +44,7 @@ const tools = [
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     outputSchema: { type: "object" },
     requiredPermissions: [],
-    productApiUrl: "inline://",
+    dispatchTarget: { kind: "inline" },
     createdAt: NOW,
     updatedAt: NOW,
   },
@@ -49,7 +58,7 @@ const tools = [
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     outputSchema: { type: "object" },
     requiredPermissions: [],
-    productApiUrl: "inline://",
+    dispatchTarget: { kind: "inline" },
     createdAt: NOW,
     updatedAt: NOW,
   },
@@ -71,7 +80,7 @@ const tools = [
     },
     outputSchema: { type: "object" },
     requiredPermissions: [],
-    productApiUrl: "inline://",
+    dispatchTarget: { kind: "inline" },
     createdAt: NOW,
     updatedAt: NOW,
   },
@@ -93,7 +102,12 @@ const tools = [
     },
     outputSchema: { type: "object" },
     requiredPermissions: ["erp:user:read"],
-    productApiUrl: ERP_API_URL,
+    dispatchTarget: {
+      kind: "https-jwt",
+      url: ERP_API_URL,
+      tokenSecretArn: ERP_JWT_SECRET_ARN,
+      scope: ERP_SCOPE,
+    },
     createdAt: NOW,
     updatedAt: NOW,
   },

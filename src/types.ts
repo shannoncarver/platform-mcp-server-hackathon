@@ -23,6 +23,25 @@ export interface UserPermissions {
   last_modified_by?: string;
 }
 
+/**
+ * Where to dispatch a tool. Discriminated union. Two kinds:
+ *   - `inline` — handled in-process by `platform-handlers.ts` (whoami,
+ *     list_products, search_tools).
+ *   - `https-jwt` — public HTTPS POST to a per-product API Gateway with an
+ *     OAuth-2.0-client-credentials JWT in the `Authorization` header. The
+ *     `tokenSecretArn` points at a Secrets Manager secret in the platform
+ *     account holding `{ client_id, client_secret, token_endpoint, scope,
+ *     audience }` for that handler. SCP-safe: no cross-account IAM action.
+ */
+export type DispatchTarget =
+  | { kind: "inline" }
+  | {
+      kind: "https-jwt";
+      url: string;
+      tokenSecretArn: string;
+      scope: string;
+    };
+
 /** A registry item — one row in `platform_mcp_tool_registry`. */
 export interface RegistryItem {
   toolId: string;
@@ -33,12 +52,8 @@ export interface RegistryItem {
   inputSchema: Record<string, unknown>;
   outputSchema?: Record<string, unknown>;
   requiredPermissions: string[];
-  /**
-   * Where to dispatch this tool. Two forms:
-   *   - `https://...`  — SigV4-signed POST to a per-product API Gateway.
-   *   - `inline://`    — handled in-process by `platform-handlers.ts`.
-   */
-  productApiUrl: string;
+  /** Where this tool gets dispatched. */
+  dispatchTarget: DispatchTarget;
   createdAt?: string;
   updatedAt?: string;
 }

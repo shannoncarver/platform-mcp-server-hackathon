@@ -3,17 +3,17 @@ Transform: AWS::Serverless-2016-10-31
 Description: >
   ERP product handler for the LINQ Platform MCP Server. Deploys to the
   linq-erp-dev AWS account: a Lambda implementing erp.checkUserAccess,
-  fronted by an API Gateway REST API v1 with AWS_IAM auth and a resource
-  policy that whitelists exactly one principal — the Platform MCP Lambda's
-  role ARN.
+  fronted by an API Gateway HTTP API v2 with a JWT authorizer backed by
+  a Cognito User Pool. Cross-account access from the Platform MCP server
+  uses the OAuth 2.0 client-credentials grant — no cross-account IAM is
+  required because the wire is public HTTPS + Bearer token.
+
+  Why JWT and not AWS_IAM auth: cross-account `execute-api:Invoke` is
+  blocked at the LINQ org level (verified 2026-05-07). Cognito + JWT
+  routes around this entirely; the Platform Lambda mints a token from
+  Cognito's public token endpoint and presents it on the wire.
 
 Parameters:
-  PlatformMcpRoleArn:
-    Type: String
-    Description: >-
-      ARN of the Platform MCP Lambda role (output PlatformMcpLambdaRoleArn
-      from the platform stack). The resource policy permits this principal
-      to invoke the API and rejects all others.
   ErpUsersTableName:
     Type: String
     Default: erp_users
@@ -23,6 +23,23 @@ Parameters:
   StageName:
     Type: String
     Default: prod
+  CognitoDomainPrefix:
+    Type: String
+    Default: linq-erp-mcp
+    Description: >-
+      Prefix for the Cognito-managed domain. Must be globally unique within
+      the region. The full domain becomes
+      <prefix>.auth.<region>.amazoncognito.com.
+  ResourceServerIdentifier:
+    Type: String
+    Default: linq-erp-mcp
+    Description: >-
+      Identifier for the Cognito resource server. Combined with the scope
+      name produces the fully-qualified scope `<identifier>/<scope>` that
+      is requested when minting a token and validated by the JWT authorizer.
+  ScopeName:
+    Type: String
+    Default: erp.invoke
 
 Globals:
   Function:
@@ -38,24 +55,66 @@ Globals:
         NODE_OPTIONS: "--enable-source-maps"
 
 Resources:
+  # ---- Cognito User Pool — issues JWTs for the Platform MCP server. ------
+  # No human users; the pool only hosts a resource server + an M2M app
+  # client. Tokens are obtained via the OAuth 2.0 client-credentials grant
+  # against the public token endpoint and are validated by the API Gateway
+  # JWT authorizer below.
+  ErpUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub "${AWS::StackName}-erp-mcp-pool"
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+
+  ErpUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref CognitoDomainPrefix
+      UserPoolId: !Ref ErpUserPool
+
+  ErpResourceServer:
+    Type: AWS::Cognito::UserPoolResourceServer
+    Properties:
+      UserPoolId: !Ref ErpUserPool
+      Identifier: !Ref ResourceServerIdentifier
+      Name: !Sub "${AWS::StackName}-erp-resource-server"
+      Scopes:
+        - ScopeName: !Ref ScopeName
+          ScopeDescription: Permission to invoke the ERP MCP handler.
+
+  ErpAppClient:
+    Type: AWS::Cognito::UserPoolClient
+    DependsOn: ErpResourceServer
+    Properties:
+      UserPoolId: !Ref ErpUserPool
+      ClientName: !Sub "${AWS::StackName}-platform-mcp-client"
+      GenerateSecret: true
+      AllowedOAuthFlows:
+        - client_credentials
+      AllowedOAuthScopes:
+        - !Sub "${ResourceServerIdentifier}/${ScopeName}"
+      AllowedOAuthFlowsUserPoolClient: true
+      ExplicitAuthFlows:
+        - ALLOW_REFRESH_TOKEN_AUTH
+
+  # ---- HTTP API v2 with JWT authorizer ---------------------------------
   ErpApi:
-    Type: AWS::Serverless::Api
+    Type: AWS::Serverless::HttpApi
     Properties:
       StageName: !Ref StageName
-      EndpointConfiguration:
-        Type: REGIONAL
       Auth:
-        DefaultAuthorizer: AWS_IAM
-        # Resource policy is intentionally NOT set in this template.
-        # AWS::ApiGateway::Deployment runs an internal validation that
-        # requires the deploying principal to be in the resource policy,
-        # which conflicts with our goal of locking the API down to ONLY
-        # the Platform MCP role. The resource policy is therefore applied
-        # POST-DEPLOY by scripts/deploy-erp-handler.sh via aws CLI
-        # (`aws apigateway update-rest-api --patch-operations`), which
-        # doesn't trigger the validation. Until the policy is applied, the
-        # API is still locked from anonymous callers because of AWS_IAM
-        # auth — only authenticated AWS callers can reach it.
+        Authorizers:
+          CognitoJwt:
+            JwtConfiguration:
+              issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${ErpUserPool}"
+              audience:
+                - !Ref ErpAppClient
+            IdentitySource: $request.header.Authorization
+        DefaultAuthorizer: CognitoJwt
 
   ErpHandlerLambda:
     Type: AWS::Serverless::Function
@@ -76,11 +135,13 @@ Resources:
                 - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ErpTenantsTableName}"
       Events:
         CheckUserAccess:
-          Type: Api
+          Type: HttpApi
           Properties:
-            RestApiId: !Ref ErpApi
+            ApiId: !Ref ErpApi
             Method: POST
             Path: /erp/checkUserAccess
+            Auth:
+              Authorizer: CognitoJwt
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
@@ -98,5 +159,35 @@ Outputs:
       Name: ErpCheckUserAccessUrl
 
   ErpApiId:
-    Description: API Gateway REST API ID.
+    Description: API Gateway HTTP API ID.
     Value: !Ref ErpApi
+
+  CognitoTokenEndpoint:
+    Description: >-
+      OAuth 2.0 token endpoint. POST grant_type=client_credentials here
+      with the app-client credentials to mint a JWT.
+    Value: !Sub "https://${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com/oauth2/token"
+    Export:
+      Name: ErpCognitoTokenEndpoint
+
+  CognitoIssuer:
+    Description: JWT issuer URL — the iss claim baked into minted tokens.
+    Value: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${ErpUserPool}"
+
+  CognitoAudience:
+    Description: >-
+      JWT audience — the app-client ID. Bound by the API Gateway JWT
+      authorizer's `audience` field.
+    Value: !Ref ErpAppClient
+
+  CognitoScope:
+    Description: Fully-qualified scope to request when minting a token.
+    Value: !Sub "${ResourceServerIdentifier}/${ScopeName}"
+
+  CognitoClientId:
+    Description: App-client ID. Same value as the JWT audience.
+    Value: !Ref ErpAppClient
+
+  CognitoUserPoolId:
+    Description: Cognito User Pool ID — needed for retrieving the client secret.
+    Value: !Ref ErpUserPool

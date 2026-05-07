@@ -109,16 +109,17 @@ Resources:
               Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/linq/platform-mcp/audit:*"
             - Effect: Allow
               Action:
-                - execute-api:Invoke
-              # Permits SigV4 calls to per-product API Gateways across LINQ
-              # accounts. The cross-account target's resource policy is the
-              # additional gate; this side just needs the identity-based
-              # allowance. Tighten when product accounts onboard.
+                - secretsmanager:GetSecretValue
+              # Permits the Lambda to read per-handler OAuth client
+              # credentials. Each registered handler family (erp, crm, dwh,
+              # support) gets its own secret under platform-mcp/<family>/...
+              # The values are populated post-deploy by scripts/seed-jwt-secret.ts
+              # from the per-product CFN stack outputs (Cognito client_id,
+              # client_secret, token_endpoint, etc.). Cross-account `execute-api:Invoke`
+              # is intentionally NOT granted — auth on the cross-account hop
+              # is JWT (Bearer) over public HTTPS, not SigV4 + AWS_IAM.
               Resource:
-                - "arn:aws:execute-api:*:*:*/*/*/erp/*"
-                - "arn:aws:execute-api:*:*:*/*/*/crm/*"
-                - "arn:aws:execute-api:*:*:*/*/*/dwh/*"
-                - "arn:aws:execute-api:*:*:*/*/*/support/*"
+                - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:platform-mcp/*"
       Events:
         JsonRpc:
           Type: HttpApi

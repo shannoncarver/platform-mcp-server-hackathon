@@ -2,7 +2,7 @@
   "name": "platform-mcp-server-hackathon",
   "version": "0.1.0",
   "private": true,
-  "description": "LINQ Platform MCP Server — V1 internal-only design (AWS SSO + SigV4 + federated API Gateway dispatch).",
+  "description": "LINQ Platform MCP Server — V1 internal-only design (AWS SSO + SigV4 to platform; OAuth client_credentials JWT to product handlers).",
   "engines": {
     "node": ">=20"
   },
@@ -26,9 +26,13 @@
   },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",
+    "@aws-sdk/client-cloudformation": "^3.600.0",
     "@aws-sdk/client-cloudwatch-logs": "^3.600.0",
+    "@aws-sdk/client-cognito-identity-provider": "^3.600.0",
     "@aws-sdk/client-dynamodb": "^3.600.0",
+    "@aws-sdk/client-secrets-manager": "^3.600.0",
     "@aws-sdk/credential-provider-node": "^3.600.0",
+    "@aws-sdk/credential-providers": "^3.600.0",
     "@aws-sdk/lib-dynamodb": "^3.600.0",
     "@smithy/protocol-http": "^4.1.0",
     "@smithy/signature-v4": "^4.2.0"

@@ -1,8 +1,9 @@
 // tools/call — visibility check, RBAC check, dispatch.
 //
-// For `inline://` tools, dispatch to platform-handlers. Otherwise SigV4-sign
-// an HTTPS POST to the registered URL. Either path emits a single audit
-// record per request.
+// For `inline` tools, dispatch to platform-handlers. Otherwise mint a JWT
+// from the registered Cognito token endpoint and POST the body to the
+// registered URL with `Authorization: Bearer <jwt>`. Either path emits a
+// single audit record per request.
 
 import type { APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 import type { Caller, UserPermissions } from "../types.js";
@@ -13,7 +14,7 @@ import {
   RPC_INVALID_PARAMS,
   RPC_INTERNAL_ERROR,
 } from "../errors.js";
-import { dispatch, DispatchError } from "../sigv4-dispatcher.js";
+import { dispatch, DispatchError, JwtMintError } from "../jwt-dispatcher.js";
 import { listProducts, searchTools, whoami } from "../platform-handlers.js";
 import { emitAudit } from "../audit.js";
 
@@ -52,7 +53,7 @@ export async function handleToolsCall(
   }
 
   // Inline platform.* tools dispatched in-process.
-  if (item.productApiUrl === "inline://") {
+  if (item.dispatchTarget.kind === "inline") {
     let result: unknown;
     try {
       switch (item.toolId) {
@@ -101,7 +102,7 @@ export async function handleToolsCall(
     );
   }
 
-  // Cross-account dispatch via SigV4.
+  // Cross-account dispatch via OAuth client_credentials JWT + Bearer.
   //
   // Wire shape to handlers:
   //   { caller_email, request_id, arguments }
@@ -120,10 +121,32 @@ export async function handleToolsCall(
     arguments: args.params.arguments ?? {},
   };
 
+  if (item.dispatchTarget.kind !== "https-jwt") {
+    await audit(args, toolName, "deny", "DISPATCH_TARGET_UNKNOWN");
+    return rpcError(
+      args.rpcId,
+      RPC_INTERNAL_ERROR,
+      "DISPATCH_TARGET_UNKNOWN",
+      args.requestId,
+    );
+  }
+
   let dispatchResult;
   try {
-    dispatchResult = await dispatch({ url: item.productApiUrl, body });
+    dispatchResult = await dispatch({
+      url: item.dispatchTarget.url,
+      body,
+      tokenSecretArn: item.dispatchTarget.tokenSecretArn,
+      scope: item.dispatchTarget.scope,
+    });
   } catch (err) {
+    if (err instanceof JwtMintError) {
+      await audit(args, toolName, "deny", "JWT_MINT_FAILED", err.status, {
+        class: "JWT_MINT",
+        message: err.message,
+      });
+      return rpcError(args.rpcId, RPC_INTERNAL_ERROR, "JWT_MINT_FAILED", args.requestId);
+    }
     if (err instanceof DispatchError) {
       await audit(args, toolName, "deny", `UPSTREAM_${err.status}`, err.status);
       return rpcError(

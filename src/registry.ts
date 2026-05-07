@@ -50,7 +50,7 @@ export const ddbRegistryStore: RegistryStore = {
       inputSchema: it.inputSchema ?? {},
       outputSchema: it.outputSchema,
       requiredPermissions: it.requiredPermissions ?? [],
-      productApiUrl: it.productApiUrl,
+      dispatchTarget: it.dispatchTarget,
       createdAt: it.createdAt,
       updatedAt: it.updatedAt,
     }));
